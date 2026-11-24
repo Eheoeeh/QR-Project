@@ -4,7 +4,7 @@ import { supabase } from '../services/supabaseClient';
 import { sessionService } from '../services/sessionService';
 import { orderService } from '../services/orderService';
 import { useSessionStore } from '../store/useSessionStore';
-import { TableSession, MenuItem, Modifier, OrderItem } from '../types';
+import { TableSession, MenuItem, Modifier, OrderItem, ServiceRequestType } from '../types';
 
 // Components
 import BrandedLoader from '../components/customer/BrandedLoader';
@@ -14,6 +14,8 @@ import MenuCard from '../components/customer/MenuCard';
 import ModifierModal from '../components/customer/ModifierModal';
 import SharedCartDrawer from '../components/customer/SharedCartDrawer';
 import BillModal from '../components/customer/BillModal';
+import OrderStatusTracker from '../components/customer/OrderStatusTracker';
+import ServiceRequestModal from '../components/customer/ServiceRequestModal';
 
 // Icons
 import {
@@ -40,13 +42,15 @@ export const CustomerPage: React.FC = () => {
     guestId,
     cartItems,
     orders,
+    activeRequests,
     setGuestId,
     setTable,
     setSettings,
     setCurrentSession,
     setIsSessionExpired,
     setCartItems,
-    setOrders
+    setOrders,
+    setActiveRequests
   } = useSessionStore();
 
   const [isLoading, setIsLoading] = useState(true);
@@ -62,14 +66,12 @@ export const CustomerPage: React.FC = () => {
   const [isModifierModalOpen, setIsModifierModalOpen] = useState(false);
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
+  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Service Request Pending Status
-  const [isCallingWaiter, setIsCallingWaiter] = useState(false);
-
-  // Initialize Anonymous Guest ID and Session
+  // Initialize Anonymous Guest ID, Session & Data
   const initSession = useCallback(async () => {
     if (isNaN(tableNumber) || tableNumber <= 0) {
       setInitError('Invalid table number. Please scan a valid table QR code.');
@@ -119,27 +121,28 @@ export const CustomerPage: React.FC = () => {
       setCurrentSession(session);
       setIsSessionExpired(session.status === 'CLOSED');
 
-      // 5. Fetch active cart items and existing orders for this session
-      const [items, sessionOrders] = await Promise.all([
+      // 5. Fetch cart items, existing orders, and active service requests
+      const [items, sessionOrders, requests] = await Promise.all([
         orderService.getCartItems(session.id),
         supabase
           .from('orders')
           .select('*, order_items(*)')
           .eq('session_id', session.id)
           .neq('status', 'CANCELLED')
+          .order('created_at', { ascending: true }),
+        sessionService.getActiveServiceRequests(session.id)
       ]);
 
       setCartItems(items);
-      if (sessionOrders.data) {
-        setOrders(sessionOrders.data);
-      }
+      if (sessionOrders.data) setOrders(sessionOrders.data);
+      setActiveRequests(requests);
     } catch (err: any) {
       console.error('Session initialization error:', err);
       setInitError('Could not connect to table session. Please check your internet connection.');
     } finally {
       setIsLoading(false);
     }
-  }, [tableNumber, setGuestId, setSettings, setTable, setCurrentSession, setIsSessionExpired, setCartItems, setOrders]);
+  }, [tableNumber, setGuestId, setSettings, setTable, setCurrentSession, setIsSessionExpired, setCartItems, setOrders, setActiveRequests]);
 
   useEffect(() => {
     initSession();
@@ -236,13 +239,73 @@ export const CustomerPage: React.FC = () => {
     };
   }, [currentSession?.id, setCartItems]);
 
+  // Scene 4: Real-time listener for Orders & Order Items status changes
+  useEffect(() => {
+    if (!currentSession?.id) return;
+
+    const channel = supabase
+      .channel(`orders-${currentSession.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+          filter: `session_id=eq.${currentSession.id}`
+        },
+        async () => {
+          const { data: updatedOrders } = await supabase
+            .from('orders')
+            .select('*, order_items(*)')
+            .eq('session_id', currentSession.id)
+            .neq('status', 'CANCELLED')
+            .order('created_at', { ascending: true });
+
+          if (updatedOrders) {
+            setOrders(updatedOrders);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentSession?.id, setOrders]);
+
+  // Scene 4: Real-time listener for Service Requests (Anti-spam lock & Waiter responses)
+  useEffect(() => {
+    if (!currentSession?.id) return;
+
+    const channel = supabase
+      .channel(`service-${currentSession.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'service_requests',
+          filter: `session_id=eq.${currentSession.id}`
+        },
+        async () => {
+          const requests = await sessionService.getActiveServiceRequests(currentSession.id);
+          setActiveRequests(requests);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentSession?.id, setActiveRequests]);
+
   // Mobile Lock-Screen & Visibility Recovery
   useEffect(() => {
     if (!currentSession?.id) return;
 
     const handleResume = async () => {
       if (document.visibilityState === 'visible') {
-        const [refreshedSession, refreshedMenu, refreshedCart, refreshedOrders] = await Promise.all([
+        const [refreshedSession, refreshedMenu, refreshedCart, refreshedOrders, refreshedRequests] = await Promise.all([
           sessionService.refreshSession(currentSession.id),
           orderService.getMenuItems(),
           orderService.getCartItems(currentSession.id),
@@ -251,6 +314,8 @@ export const CustomerPage: React.FC = () => {
             .select('*, order_items(*)')
             .eq('session_id', currentSession.id)
             .neq('status', 'CANCELLED')
+            .order('created_at', { ascending: true }),
+          sessionService.getActiveServiceRequests(currentSession.id)
         ]);
 
         if (refreshedSession) {
@@ -262,6 +327,7 @@ export const CustomerPage: React.FC = () => {
         if (refreshedMenu.length > 0) setMenuItems(refreshedMenu);
         setCartItems(refreshedCart);
         if (refreshedOrders.data) setOrders(refreshedOrders.data);
+        setActiveRequests(refreshedRequests);
       }
     };
 
@@ -272,7 +338,7 @@ export const CustomerPage: React.FC = () => {
       document.removeEventListener('visibilitychange', handleResume);
       window.removeEventListener('online', handleResume);
     };
-  }, [currentSession?.id, setCurrentSession, setIsSessionExpired, setCartItems, setOrders]);
+  }, [currentSession?.id, setCurrentSession, setIsSessionExpired, setCartItems, setOrders, setActiveRequests]);
 
   // Categories list with 'All' prepended
   const categories = useMemo(() => {
@@ -345,12 +411,12 @@ export const CustomerPage: React.FC = () => {
     try {
       await orderService.submitOrder(currentSession.id, cartItems, table.table_number);
 
-      // Re-fetch orders so live bill updates immediately
       const { data: updatedOrders } = await supabase
         .from('orders')
         .select('*, order_items(*)')
         .eq('session_id', currentSession.id)
-        .neq('status', 'CANCELLED');
+        .neq('status', 'CANCELLED')
+        .order('created_at', { ascending: true });
 
       if (updatedOrders) {
         setOrders(updatedOrders);
@@ -365,21 +431,21 @@ export const CustomerPage: React.FC = () => {
     }
   };
 
-  // Quick Service Bell Action
-  const handleCallWaiter = async () => {
-    if (!currentSession || isCallingWaiter) return;
-    setIsCallingWaiter(true);
+  // Scene 4: Service Request Trigger
+  const handleSubmitServiceRequest = async (type: ServiceRequestType, note?: string) => {
+    if (!currentSession) return;
     try {
-      await sessionService.submitServiceRequest(currentSession.id, 'CALL_WAITER');
-      setToastMessage('Service call sent! A waiter is on the way.');
+      await sessionService.submitServiceRequest(currentSession.id, type, note);
+      const requests = await sessionService.getActiveServiceRequests(currentSession.id);
+      setActiveRequests(requests);
+      setToastMessage('Service request dispatched to waiter staff.');
+      setTimeout(() => setToastMessage(null), 3500);
     } catch (err: any) {
       if (err?.code === '23505') {
-        setToastMessage('Waiter has already been notified and is on the way!');
+        setToastMessage('A request of this type is already pending for your table.');
       } else {
-        setToastMessage('Service call dispatched to waiter staff.');
+        setToastMessage('Request sent to waiter.');
       }
-    } finally {
-      setIsCallingWaiter(false);
       setTimeout(() => setToastMessage(null), 3500);
     }
   };
@@ -422,6 +488,9 @@ export const CustomerPage: React.FC = () => {
     const tax = (subtotal * taxPercent) / 100;
     return Math.round(subtotal + tax);
   }, [orders, settings]);
+
+  // Check if any service call is currently active for header badge
+  const hasActiveServiceCalls = activeRequests.length > 0;
 
   // 1. Loading State
   if (isLoading) {
@@ -486,7 +555,7 @@ export const CustomerPage: React.FC = () => {
   // 5. Active Dining Menu & Ordering Experience
   return (
     <div className="min-h-[100dvh] bg-slate-50 text-slate-900 pb-36">
-      {/* Sticky Top Header: Restaurant Name & Table Number on Left; Service Bell & Live Bill pill on Right */}
+      {/* Sticky Top Header: Restaurant Name & Table on Left; Service Bell & Live Bill pill on Right */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/90 shadow-2xs">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
           {/* Left: Restaurant Name + Table Number Badge */}
@@ -508,16 +577,19 @@ export const CustomerPage: React.FC = () => {
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              onClick={handleCallWaiter}
-              disabled={isCallingWaiter}
-              title="Call Server"
-              className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-full bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 transition shadow-2xs active:scale-95"
+              onClick={() => setIsServiceModalOpen(true)}
+              title="Request Waiter or Service"
+              className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-full border transition shadow-2xs active:scale-95 ${
+                hasActiveServiceCalls
+                  ? 'bg-orange-500 text-white border-orange-500 animate-pulse'
+                  : 'bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700'
+              }`}
             >
-              <Bell className="w-3.5 h-3.5 text-orange-500" />
-              <span className="hidden xs:inline">Service</span>
+              <Bell className="w-3.5 h-3.5" />
+              <span>{hasActiveServiceCalls ? 'Pending' : 'Service'}</span>
             </button>
 
-            {/* Live Bill Pill (Tapping opens BillModal) */}
+            {/* Live Bill Pill */}
             <button
               type="button"
               onClick={() => setIsBillModalOpen(true)}
@@ -576,6 +648,13 @@ export const CustomerPage: React.FC = () => {
         </div>
       </header>
 
+      {/* Scene 4: Always-Reachable Live Order Status Strip (Shows when orders are placed) */}
+      <OrderStatusTracker
+        orders={orders}
+        currencySymbol={settings?.currency_symbol || 'Rs.'}
+        tableLabel={table.label}
+      />
+
       {/* Main Dishes Catalog Feed */}
       <main className="max-w-2xl mx-auto p-4 space-y-4">
         {/* Category Header */}
@@ -585,7 +664,7 @@ export const CustomerPage: React.FC = () => {
           </h2>
         </div>
 
-        {/* Dish Cards: Single Column on Phones, Two-Column on Tablets/Desktop */}
+        {/* Dish Cards Grid */}
         {filteredItems.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-2 shadow-2xs">
             <p className="text-sm font-bold text-slate-700">No dishes found</p>
@@ -615,7 +694,7 @@ export const CustomerPage: React.FC = () => {
         </div>
       )}
 
-      {/* Scene 3 Floating Bottom Cart Bar (Appears smoothly when cart has items) */}
+      {/* Scene 3 Floating Bottom Cart Bar (Appears when cart has items) */}
       {cartItemCount > 0 && (
         <div className="fixed bottom-16 inset-x-0 z-40 px-4 pointer-events-none animate-slide-up">
           <div className="max-w-2xl mx-auto pointer-events-auto">
@@ -705,6 +784,15 @@ export const CustomerPage: React.FC = () => {
         tableLabel={table.label}
         orders={orders}
         settings={settings}
+      />
+
+      {/* Scene 4: Service Request Sheet Modal */}
+      <ServiceRequestModal
+        isOpen={isServiceModalOpen}
+        onClose={() => setIsServiceModalOpen(false)}
+        tableLabel={table.label}
+        activeRequests={activeRequests}
+        onSubmitRequest={handleSubmitServiceRequest}
       />
     </div>
   );

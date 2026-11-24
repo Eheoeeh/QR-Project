@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { Table, TableSession, RestaurantSettings, ServiceRequestType, ServiceRequestStatus } from '../types';
+import { Table, TableSession, RestaurantSettings, ServiceRequest, ServiceRequestType, ServiceRequestStatus } from '../types';
 
 export const sessionService = {
   /**
@@ -28,7 +28,6 @@ export const sessionService = {
       .maybeSingle();
 
     if (error || !data) {
-      // Fallback defaults if not yet seeded
       return {
         id: 1,
         name: 'Spice & Sizzle Bistro',
@@ -85,12 +84,11 @@ export const sessionService = {
 
   /**
    * Resolves the active table session, or creates a new one if none exists.
-   * Ensures that multiple phones scanning Table 1 automatically bind to the same session.
    */
   async resolveOrCreateTableSession(table: Table, requirePin: boolean): Promise<TableSession> {
     const tokenKey = `qr_session_token_${table.table_number}`;
 
-    // 1. Check if the table already has an active session
+    // 1. Check if the table pointer has an active session
     if (table.current_session_id) {
       const { data: activeSession } = await supabase
         .from('table_sessions')
@@ -100,7 +98,6 @@ export const sessionService = {
         .maybeSingle();
 
       if (activeSession) {
-        // Save the active token locally so this phone joins the shared cart
         localStorage.setItem(tokenKey, activeSession.session_token);
         return activeSession as TableSession;
       }
@@ -117,7 +114,6 @@ export const sessionService = {
       .maybeSingle();
 
     if (existingSession) {
-      // Re-link table pointer if it was cleared
       await supabase
         .from('tables')
         .update({ current_session_id: existingSession.id })
@@ -134,7 +130,7 @@ export const sessionService = {
       .insert({
         table_id: table.id,
         seating_pin: randomPin,
-        pin_verified: !requirePin, // Auto-verified if PIN requirement is disabled
+        pin_verified: !requirePin,
         status: 'OPEN'
       })
       .select()
@@ -144,13 +140,11 @@ export const sessionService = {
       throw createError || new Error('Failed to create table session');
     }
 
-    // Update physical table current_session_id pointer
     await supabase
       .from('tables')
       .update({ current_session_id: newSession.id })
       .eq('id', table.id);
 
-    // Save session token in browser
     localStorage.setItem(tokenKey, newSession.session_token);
     return newSession as TableSession;
   },
@@ -187,7 +181,6 @@ export const sessionService = {
       return { success: false, message: 'Incorrect 4-digit PIN. Please check your table card.' };
     }
 
-    // Mark verified in database
     const { error: updateError } = await supabase
       .from('table_sessions')
       .update({ pin_verified: true })
@@ -205,6 +198,24 @@ export const sessionService = {
    */
   clearStoredToken(tableNumber: number) {
     localStorage.removeItem(`qr_session_token_${tableNumber}`);
+  },
+
+  /**
+   * Retrieves active service requests for the session
+   */
+  async getActiveServiceRequests(sessionId: string): Promise<ServiceRequest[]> {
+    const { data, error } = await supabase
+      .from('service_requests')
+      .select('*')
+      .eq('session_id', sessionId)
+      .in('status', ['PENDING', 'ON_THE_WAY'])
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching service requests:', error);
+      return [];
+    }
+    return (data as ServiceRequest[]) || [];
   },
 
   /**
