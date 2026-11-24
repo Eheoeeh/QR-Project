@@ -19,6 +19,9 @@ interface TableCardProps {
   requirePin?: boolean;
   onSelectTable: (tableState: TableFloorState) => void;
   onSeatTable?: (tableId: number, tableNumber: number) => void;
+  onResolveService?: (requestId: string) => void;
+  onCollectCash?: (sessionId: string, tableId: number) => void;
+  onMarkServed?: (sessionId: string) => void;
 }
 
 export const TableCard: React.FC<TableCardProps> = ({
@@ -26,7 +29,10 @@ export const TableCard: React.FC<TableCardProps> = ({
   currencySymbol = 'Rs.',
   requirePin = false,
   onSelectTable,
-  onSeatTable
+  onSeatTable,
+  onResolveService,
+  onCollectCash,
+  onMarkServed
 }) => {
   const { table, session, orders, serviceRequests, runningTotal, urgency, urgencyLabel, seatedDurationMinutes } =
     tableState;
@@ -175,20 +181,63 @@ export const TableCard: React.FC<TableCardProps> = ({
                     {serviceRequests[0].type === 'OTHER' && (serviceRequests[0].note || 'Special Request')}
                   </span>
                 </div>
-                <span className="text-[10px] text-slate-400 font-medium shrink-0">
-                  {new Date(serviceRequests[0].created_at).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
+                    {new Date(serviceRequests[0].created_at).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
+                  {onResolveService && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onResolveService(serviceRequests[0].id);
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] transition"
+                    >
+                      Done
+                    </button>
+                  )}
+                </div>
               </div>
+            )}
+
+            {/* Direct Bill Requested Action: Collect Cash & Settle */}
+            {urgency === 'BILL_REQUESTED' && session && onCollectCash && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCollectCash(session.id, table.id);
+                }}
+                className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-xs shadow-md shadow-emerald-950/40 transition flex items-center justify-center gap-1.5"
+              >
+                <DollarSign className="w-4 h-4" />
+                <span>Collect Cash & Settle Table</span>
+              </button>
             )}
 
             {/* Food Status Notice */}
             {tableState.hasReadyFood ? (
-              <div className="p-2 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 flex items-center gap-2 text-xs font-extrabold">
-                <BellRing className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
-                <span>Food Ready at Pass — Deliver Now!</span>
+              <div className="p-2 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 flex items-center justify-between gap-2 text-xs font-extrabold">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <BellRing className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
+                  <span className="truncate">Food Ready at Pass!</span>
+                </div>
+                {onMarkServed && session && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMarkServed(session.id);
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] transition shrink-0"
+                  >
+                    Delivered
+                  </button>
+                )}
               </div>
             ) : tableState.urgency === 'ORDER_PENDING' ? (
               <div className="p-2 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 flex items-center gap-2 text-xs font-bold">

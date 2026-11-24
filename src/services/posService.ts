@@ -222,5 +222,16 @@ export const posService = {
       .from('tables')
       .update({ current_session_id: null })
       .eq('id', tableId);
+  },
+
+  /**
+   * Mark all ready orders for a session as SERVED
+   */
+  async markOrdersServed(sessionId: string): Promise<void> {
+    await supabase
+      .from('orders')
+      .update({ status: 'SERVED' })
+      .eq('session_id', sessionId)
+      .eq('status', 'READY');
   }
 };

@@ -147,6 +147,16 @@ export const WaiterPage: React.FC = () => {
     }
   };
 
+  // Handle marking ready food as delivered to table
+  const handleMarkServed = async (sessionId: string) => {
+    try {
+      await posService.markOrdersServed(sessionId);
+      await loadFloor();
+    } catch (err) {
+      console.error('Error marking orders served:', err);
+    }
+  };
+
   // Counts for tabs & summary
   const occupiedCount = floor.filter((t) => t.urgency !== 'FREE').length;
   const attentionCount = floor.filter(
@@ -330,6 +340,9 @@ export const WaiterPage: React.FC = () => {
                 requirePin={settings?.require_seating_pin}
                 onSelectTable={(tableState) => setSelectedTable(tableState)}
                 onSeatTable={handleSeatTable}
+                onResolveService={handleResolveServiceRequest}
+                onCollectCash={handleCloseSession}
+                onMarkServed={handleMarkServed}
               />
             ))}
           </div>
