@@ -16,6 +16,7 @@ import SharedCartDrawer from '../components/customer/SharedCartDrawer';
 import BillModal from '../components/customer/BillModal';
 import OrderStatusTracker from '../components/customer/OrderStatusTracker';
 import ServiceRequestModal from '../components/customer/ServiceRequestModal';
+import OrderSuccessTrackingView from '../components/customer/OrderSuccessTrackingView';
 
 // Icons
 import {
@@ -27,7 +28,8 @@ import {
   Search,
   CheckCircle,
   X,
-  ArrowRight
+  ArrowRight,
+  Clock
 } from 'lucide-react';
 
 export const CustomerPage: React.FC = () => {
@@ -67,6 +69,7 @@ export const CustomerPage: React.FC = () => {
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'menu' | 'tracking'>('menu');
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -134,7 +137,15 @@ export const CustomerPage: React.FC = () => {
       ]);
 
       setCartItems(items);
-      if (sessionOrders.data) setOrders(sessionOrders.data);
+      if (sessionOrders.data && sessionOrders.data.length > 0) {
+        setOrders(sessionOrders.data);
+        const hasActiveCookingOrder = sessionOrders.data.some(
+          (o) => o.status === 'RECEIVED' || o.status === 'PREPARING' || o.status === 'READY'
+        );
+        if (hasActiveCookingOrder) {
+          setViewMode('tracking');
+        }
+      }
       setActiveRequests(requests);
     } catch (err: any) {
       console.error('Session initialization error:', err);
@@ -423,6 +434,8 @@ export const CustomerPage: React.FC = () => {
       }
 
       setCartItems([]);
+      setIsCartDrawerOpen(false);
+      setViewMode('tracking');
       setToastMessage('Order placed! The kitchen is preparing your food.');
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
@@ -552,7 +565,49 @@ export const CustomerPage: React.FC = () => {
     );
   }
 
-  // 5. Active Dining Menu & Ordering Experience
+  // 5. Dedicated Order Success & Kitchen Tracking Screen
+  if (viewMode === 'tracking' && orders.length > 0) {
+    return (
+      <div className="min-h-[100dvh] bg-slate-50 text-slate-900">
+        <OrderSuccessTrackingView
+          orders={orders}
+          tableLabel={table.label}
+          settings={settings}
+          runningTotal={runningTotal}
+          activeRequests={activeRequests}
+          onOrderMore={() => setViewMode('menu')}
+          onViewBill={() => setIsBillModalOpen(true)}
+          onRequestService={(type) => handleSubmitServiceRequest(type)}
+        />
+
+        {/* Live Bill Modal */}
+        <BillModal
+          isOpen={isBillModalOpen}
+          onClose={() => setIsBillModalOpen(false)}
+          tableLabel={table.label}
+          orders={orders}
+          settings={settings}
+          cartItemCount={cartItemCount}
+          onOpenCart={() => {
+            setIsBillModalOpen(false);
+            setViewMode('menu');
+            setIsCartDrawerOpen(true);
+          }}
+        />
+
+        {/* Scene 4: Service Request Sheet Modal */}
+        <ServiceRequestModal
+          isOpen={isServiceModalOpen}
+          onClose={() => setIsServiceModalOpen(false)}
+          tableLabel={table.label}
+          activeRequests={activeRequests}
+          onSubmitRequest={handleSubmitServiceRequest}
+        />
+      </div>
+    );
+  }
+
+  // 6. Active Dining Menu & Ordering Experience
   return (
     <div className="min-h-[100dvh] bg-slate-50 text-slate-900 pb-36">
       {/* Sticky Top Header: Restaurant Name & Table on Left; Service Bell & Live Bill pill on Right */}
@@ -653,6 +708,7 @@ export const CustomerPage: React.FC = () => {
         orders={orders}
         currencySymbol={settings?.currency_symbol || 'Rs.'}
         tableLabel={table.label}
+        onOpenTracking={() => setViewMode('tracking')}
       />
 
       {/* Main Dishes Catalog Feed */}
@@ -730,25 +786,37 @@ export const CustomerPage: React.FC = () => {
 
       {/* Bottom Floating Nav Bar */}
       <nav className="fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 px-4 py-2.5 shadow-lg">
-        <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
+        <div className="max-w-2xl mx-auto flex items-center justify-between gap-2.5">
           {/* View Bill Button */}
           <button
             type="button"
             onClick={() => setIsBillModalOpen(true)}
-            className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition active:scale-[0.99]"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition active:scale-[0.99]"
           >
             <Receipt className="w-4 h-4 text-slate-600" />
             <span>View Bill</span>
           </button>
 
+          {/* Track Order Button (Visible when orders exist) */}
+          {orders.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setViewMode('tracking')}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 text-xs font-bold transition active:scale-[0.99]"
+            >
+              <Clock className="w-4 h-4 text-orange-600 animate-pulse" />
+              <span>Track Order</span>
+            </button>
+          )}
+
           {/* Cart Button */}
           <button
             type="button"
             onClick={() => setIsCartDrawerOpen(true)}
-            className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-md transition active:scale-[0.99]"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-md transition active:scale-[0.99]"
           >
             <ShoppingBag className="w-4 h-4" />
-            <span>Shared Cart ({cartItemCount})</span>
+            <span>Cart ({cartItemCount})</span>
           </button>
         </div>
       </nav>

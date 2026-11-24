@@ -14,6 +14,7 @@ interface OrderStatusTrackerProps {
   orders: Order[];
   currencySymbol?: string;
   tableLabel: string;
+  onOpenTracking?: () => void;
 }
 
 const STAGES: { key: OrderStatus; label: string; icon: React.FC<{ className?: string }> }[] = [
@@ -26,7 +27,8 @@ const STAGES: { key: OrderStatus; label: string; icon: React.FC<{ className?: st
 export const OrderStatusTracker: React.FC<OrderStatusTrackerProps> = ({
   orders,
   currencySymbol = 'Rs.',
-  tableLabel
+  tableLabel,
+  onOpenTracking
 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -74,7 +76,13 @@ export const OrderStatusTracker: React.FC<OrderStatusTrackerProps> = ({
       {/* Always-reachable Sticky Live Order Status Strip */}
       <div className="max-w-2xl mx-auto px-4 pt-2">
         <div
-          onClick={() => setIsDrawerOpen(true)}
+          onClick={() => {
+            if (onOpenTracking) {
+              onOpenTracking();
+            } else {
+              setIsDrawerOpen(true);
+            }
+          }}
           className="bg-white rounded-2xl p-3 border border-slate-200/90 shadow-2xs cursor-pointer hover:border-orange-400 active:scale-[0.99] transition flex items-center justify-between gap-3 select-none"
         >
           <div className="flex items-center gap-3 min-w-0">
