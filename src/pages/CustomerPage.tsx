@@ -777,13 +777,18 @@ export const CustomerPage: React.FC = () => {
         onPlaceOrder={handlePlaceOrder}
       />
 
-      {/* Live Bill Modal */}
+      {/* Live Bill Modal (Scene 5) */}
       <BillModal
         isOpen={isBillModalOpen}
         onClose={() => setIsBillModalOpen(false)}
         tableLabel={table.label}
         orders={orders}
         settings={settings}
+        cartItemCount={cartItemCount}
+        onOpenCart={() => {
+          setIsBillModalOpen(false);
+          setIsCartDrawerOpen(true);
+        }}
       />
 
       {/* Scene 4: Service Request Sheet Modal */}

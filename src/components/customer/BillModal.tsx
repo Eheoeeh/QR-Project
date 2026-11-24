@@ -1,7 +1,25 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Order, RestaurantSettings } from '../../types';
-import { calculateBill } from '../../utils/billCalculator';
-import { X, Receipt, Clock } from 'lucide-react';
+import {
+  calculateBill,
+  calculateEqualSplit,
+  calculateItemizedSplit,
+  ItemizedGuestClaim
+} from '../../utils/billCalculator';
+import {
+  X,
+  Receipt,
+  Users,
+  CheckSquare,
+  Plus,
+  Minus,
+  Check,
+  UserPlus,
+  Clock,
+  AlertCircle,
+  ShoppingBag,
+  ArrowRight
+} from 'lucide-react';
 
 interface BillModalProps {
   isOpen: boolean;
@@ -9,24 +27,116 @@ interface BillModalProps {
   tableLabel: string;
   orders: Order[];
   settings: RestaurantSettings | null;
+  cartItemCount?: number;
+  onOpenCart?: () => void;
 }
+
+type SplitMode = 'FULL' | 'EQUAL' | 'ITEMIZED';
 
 export const BillModal: React.FC<BillModalProps> = ({
   isOpen,
   onClose,
   tableLabel,
   orders,
-  settings
+  settings,
+  cartItemCount = 0,
+  onOpenCart
 }) => {
+  const [splitMode, setSplitMode] = useState<SplitMode>('FULL');
+  const [equalGuestCount, setEqualGuestCount] = useState<number>(3);
+
+  // Itemized Split State
+  const [guests, setGuests] = useState<string[]>(['Person 1', 'Person 2']);
+  const [activeGuestIdx, setActiveGuestIdx] = useState<number>(0);
+  const [newGuestName, setNewGuestName] = useState<string>('');
+  const [showAddGuestInput, setShowAddGuestInput] = useState<boolean>(false);
+
+  // Claim map: key = `${guestIdx}_${orderItemId}`, value = quantity claimed
+  const [claimMap, setClaimMap] = useState<Record<string, number>>({});
+
   if (!isOpen) return null;
 
-  const allOrderItems = orders
-    .filter((o) => o.status !== 'CANCELLED')
-    .flatMap((o) => o.order_items || []);
+  const validOrders = orders.filter((o) => o.status !== 'CANCELLED');
+  const allOrderItems = validOrders.flatMap((o) => o.order_items || []);
 
-  const taxPercent = settings?.tax_percent || 16;
+  const taxPercent = settings?.tax_percent ?? 16;
   const currencySymbol = settings?.currency_symbol || 'Rs.';
   const billSummary = calculateBill(allOrderItems, taxPercent);
+
+  // Equal Split calculation
+  const equalShares = calculateEqualSplit(billSummary.grandTotal, equalGuestCount);
+
+  // Transform claimMap into ItemizedGuestClaim array
+  const itemizedClaims: ItemizedGuestClaim[] = guests.map((guestLabel, gIdx) => {
+    const claimedItems: { orderItemId: string; itemName: string; unitPrice: number; quantityClaimed: number }[] = [];
+
+    allOrderItems.forEach((item) => {
+      const key = `${gIdx}_${item.id}`;
+      const qty = claimMap[key] || 0;
+      if (qty > 0) {
+        claimedItems.push({
+          orderItemId: item.id,
+          itemName: item.item_name,
+          unitPrice: Number(item.unit_price),
+          quantityClaimed: qty
+        });
+      }
+    });
+
+    return {
+      guestLabel,
+      items: claimedItems
+    };
+  });
+
+  const itemizedSplitResult = calculateItemizedSplit(allOrderItems, itemizedClaims, taxPercent);
+
+  // Helper to handle claiming an item for active guest
+  const handleToggleClaimItem = (orderItemId: string, maxQty: number) => {
+    const key = `${activeGuestIdx}_${orderItemId}`;
+    const currentClaimed = claimMap[key] || 0;
+
+    // Total claimed by other guests
+    let otherClaimed = 0;
+    guests.forEach((_, idx) => {
+      if (idx !== activeGuestIdx) {
+        otherClaimed += claimMap[`${idx}_${orderItemId}`] || 0;
+      }
+    });
+
+    const availableToClaim = Math.max(0, maxQty - otherClaimed);
+
+    if (currentClaimed < availableToClaim) {
+      setClaimMap((prev) => ({ ...prev, [key]: currentClaimed + 1 }));
+    } else {
+      // Reset if already claimed all available
+      const updated = { ...claimMap };
+      delete updated[key];
+      setClaimMap(updated);
+    }
+  };
+
+  // Helper to decrement a claim
+  const handleDecrementClaim = (orderItemId: string) => {
+    const key = `${activeGuestIdx}_${orderItemId}`;
+    const current = claimMap[key] || 0;
+    if (current > 1) {
+      setClaimMap((prev) => ({ ...prev, [key]: current - 1 }));
+    } else {
+      const updated = { ...claimMap };
+      delete updated[key];
+      setClaimMap(updated);
+    }
+  };
+
+  // Add new guest
+  const handleAddGuest = () => {
+    const name = newGuestName.trim() || `Person ${guests.length + 1}`;
+    setGuests([...guests, name]);
+    setActiveGuestIdx(guests.length);
+    setNewGuestName('');
+    setShowAddGuestInput(false);
+  };
 
   return (
     <div
@@ -34,17 +144,17 @@ export const BillModal: React.FC<BillModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl max-h-[88dvh] flex flex-col overflow-hidden shadow-2xl transition-transform"
+        className="w-full max-w-xl bg-white rounded-t-3xl sm:rounded-2xl max-h-[92dvh] flex flex-col overflow-hidden shadow-2xl transition-transform"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center">
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-orange-600/10 text-orange-600 flex items-center justify-center">
               <Receipt className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">Live Bill Summary</h2>
+              <h2 className="text-base font-bold text-slate-900">Live Bill & Bill Splitting</h2>
               <p className="text-xs text-slate-400 font-medium">{tableLabel}</p>
             </div>
           </div>
@@ -56,87 +166,466 @@ export const BillModal: React.FC<BillModalProps> = ({
           </button>
         </div>
 
-        {/* Body Content */}
+        {/* Scrollable Content Body */}
         <div className="overflow-y-auto p-4 space-y-4 flex-1">
-          {orders.length === 0 || allOrderItems.length === 0 ? (
-            <div className="py-12 text-center space-y-2">
-              <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mb-3">
-                <Clock className="w-6 h-6" />
+          {validOrders.length === 0 || allOrderItems.length === 0 ? (
+            <div className="py-10 text-center space-y-3">
+              <div className="w-14 h-14 mx-auto rounded-full bg-slate-100 text-slate-400 flex items-center justify-center">
+                <Clock className="w-7 h-7" />
               </div>
               <h3 className="text-sm font-bold text-slate-800">No Orders Placed Yet</h3>
               <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                Items currently in your shared cart haven't been submitted to the kitchen yet. Tap "Place Order" in your cart to start your bill.
+                Add dishes from the menu and tap Place Order to start your live bill.
               </p>
+
+              {cartItemCount > 0 && onOpenCart && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={onOpenCart}
+                    className="inline-flex items-center gap-2 py-2.5 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-md transition"
+                  >
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>View Shared Cart ({cartItemCount} items)</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="space-y-4">
-              {/* Submitted Orders Breakdown */}
-              <div className="space-y-3">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                  Itemized Orders
-                </span>
+            <>
+              {/* Grand Total Highlight Banner */}
+              <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-sm space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-orange-400 block">
+                      Overall Grand Total
+                    </span>
+                    <span className="text-2xl font-black text-white">
+                      {currencySymbol} {billSummary.grandTotal.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="text-right text-xs space-y-0.5 text-slate-400">
+                    <div>Subtotal: {currencySymbol} {billSummary.subtotal.toLocaleString()}</div>
+                    <div>Tax ({taxPercent}%): {currencySymbol} {billSummary.taxAmount.toLocaleString()}</div>
+                  </div>
+                </div>
 
-                <div className="bg-slate-50 rounded-2xl p-3 border border-slate-200/80 divide-y divide-slate-200/60">
-                  {allOrderItems.map((item, idx) => (
-                    <div key={item.id || idx} className="py-2.5 first:pt-0 last:pb-0 flex justify-between items-start text-xs">
-                      <div className="space-y-0.5">
-                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                          <span className="text-orange-600">{item.quantity}x</span>
-                          <span>{item.item_name}</span>
+                {/* Three-Way Split Segmented Switcher */}
+                <div className="grid grid-cols-3 gap-1 bg-slate-800 p-1 rounded-xl text-xs font-bold text-center">
+                  <button
+                    type="button"
+                    onClick={() => setSplitMode('FULL')}
+                    className={`py-2 px-1 rounded-lg transition flex items-center justify-center gap-1.5 ${
+                      splitMode === 'FULL'
+                        ? 'bg-orange-600 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span>Full Bill</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSplitMode('EQUAL')}
+                    className={`py-2 px-1 rounded-lg transition flex items-center justify-center gap-1.5 ${
+                      splitMode === 'EQUAL'
+                        ? 'bg-orange-600 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Split Equally</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSplitMode('ITEMIZED')}
+                    className={`py-2 px-1 rounded-lg transition flex items-center justify-center gap-1.5 ${
+                      splitMode === 'ITEMIZED'
+                        ? 'bg-orange-600 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    <span>Split by Item</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* MODE 1: Full Bill Breakdown Grouped by Order Round */}
+              {splitMode === 'FULL' && (
+                <div className="space-y-3 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                      All Placed Orders ({validOrders.length} Round{validOrders.length > 1 ? 's' : ''})
+                    </span>
+                    <span className="text-xs font-semibold text-slate-500">
+                      {allOrderItems.reduce((acc, i) => acc + i.quantity, 0)} total items
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {validOrders.map((order, orderIdx) => {
+                      const orderItems = order.order_items || [];
+                      const roundSubtotal = orderItems.reduce(
+                        (sum, item) => sum + (Number(item.unit_price) * item.quantity),
+                        0
+                      );
+
+                      return (
+                        <div
+                          key={order.id}
+                          className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/80 space-y-2.5"
+                        >
+                          <div className="flex items-center justify-between border-b border-slate-200/70 pb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-md bg-orange-600/10 text-orange-600 font-black text-[11px] flex items-center justify-center">
+                                {orderIdx + 1}
+                              </span>
+                              <span className="text-xs font-bold text-slate-800">
+                                Round #{orderIdx + 1}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                ({new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                              </span>
+                            </div>
+                            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                              {order.status}
+                            </span>
+                          </div>
+
+                          <div className="divide-y divide-slate-200/60">
+                            {orderItems.map((item, idx) => (
+                              <div
+                                key={item.id || idx}
+                                className="py-2 first:pt-0 last:pb-0 flex justify-between items-start text-xs"
+                              >
+                                <div className="space-y-0.5 min-w-0 pr-2">
+                                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                    <span className="text-orange-600 shrink-0 font-extrabold">{item.quantity}x</span>
+                                    <span className="truncate">{item.item_name}</span>
+                                  </div>
+                                  {item.selected_modifiers && item.selected_modifiers.length > 0 && (
+                                    <div className="text-[10px] text-orange-600 pl-4">
+                                      + {item.selected_modifiers.map((m) => m.name).join(', ')}
+                                    </div>
+                                  )}
+                                  {item.note && (
+                                    <div className="text-[10px] text-slate-400 italic pl-4">
+                                      "{item.note}"
+                                    </div>
+                                  )}
+                                </div>
+
+                                <span className="font-black text-slate-900 shrink-0">
+                                  {currencySymbol} {(Number(item.unit_price) * item.quantity).toLocaleString()}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-200/70 flex justify-between text-xs font-semibold text-slate-600">
+                            <span>Round Subtotal</span>
+                            <span>{currencySymbol} {roundSubtotal.toLocaleString()}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Summary Totals Box */}
+                  <div className="bg-slate-100 rounded-2xl p-3.5 space-y-1.5 text-xs text-slate-600">
+                    <div className="flex justify-between">
+                      <span>Subtotal</span>
+                      <span className="font-bold text-slate-900">{currencySymbol} {billSummary.subtotal.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Sales Tax ({taxPercent}%)</span>
+                      <span className="font-bold text-slate-900">{currencySymbol} {billSummary.taxAmount.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between pt-1 border-t border-slate-200 text-sm font-black text-slate-900">
+                      <span>Grand Total</span>
+                      <span className="text-orange-600">{currencySymbol} {billSummary.grandTotal.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 2: Split Equally */}
+              {splitMode === 'EQUAL' && (
+                <div className="space-y-4 animate-fade-in">
+                  {/* Guest Count Stepper */}
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/80 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-extrabold text-slate-900 block">Number of Diners</span>
+                      <span className="text-[11px] text-slate-400">Divide bill evenly (2 to 8 guests)</span>
+                    </div>
+
+                    <div className="flex items-center gap-3 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => setEqualGuestCount(Math.max(2, equalGuestCount - 1))}
+                        disabled={equalGuestCount <= 2}
+                        className="w-8 h-8 rounded-lg bg-slate-100 disabled:opacity-30 text-slate-800 flex items-center justify-center font-bold transition active:scale-90"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+
+                      <span className="w-16 text-center font-black text-sm text-slate-900">
+                        {equalGuestCount} Diners
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => setEqualGuestCount(Math.min(8, equalGuestCount + 1))}
+                        disabled={equalGuestCount >= 8}
+                        className="w-8 h-8 rounded-lg bg-slate-100 disabled:opacity-30 text-slate-800 flex items-center justify-center font-bold transition active:scale-90"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Equal Shares List (Stacked on Mobile, Side-by-Side on Desktop) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {equalShares.map((share, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-2xs flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 font-bold text-xs flex items-center justify-center">
+                            #{idx + 1}
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-slate-900 block">
+                              Guest {idx + 1}
+                            </span>
+                            <span className="text-[10px] text-slate-400">Equal 1/{equalGuestCount} share</span>
+                          </div>
                         </div>
 
-                        {item.selected_modifiers && item.selected_modifiers.length > 0 && (
-                          <div className="text-[10px] text-slate-500 pl-4 font-mono">
-                            + {item.selected_modifiers.map((m) => m.name).join(', ')}
-                          </div>
-                        )}
-
-                        {item.note && (
-                          <div className="text-[10px] text-slate-400 italic pl-4">
-                            "{item.note}"
-                          </div>
-                        )}
+                        <span className="text-sm font-black text-orange-600">
+                          {currencySymbol} {share.toLocaleString()}
+                        </span>
                       </div>
+                    ))}
+                  </div>
 
-                      <div className="font-extrabold text-slate-900 shrink-0">
-                        {currencySymbol} {(Number(item.unit_price) * item.quantity).toLocaleString()}
-                      </div>
+                  <div className="text-center text-[11px] text-slate-400 bg-slate-50 py-2 rounded-xl border border-slate-200/60">
+                    Exact equal split • Total sum = {currencySymbol} {billSummary.grandTotal.toLocaleString()}
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 3: Split by Item */}
+              {splitMode === 'ITEMIZED' && (
+                <div className="space-y-4 animate-fade-in">
+                  {/* Guest Tabs Selector */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                        1. Select Person to Assign Dishes
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddGuestInput(!showAddGuestInput)}
+                        className="text-xs font-bold text-orange-600 hover:text-orange-500 inline-flex items-center gap-1"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>Add Person</span>
+                      </button>
                     </div>
-                  ))}
-                </div>
-              </div>
 
-              {/* Bill Totals Calculation */}
-              <div className="bg-white rounded-2xl p-4 border border-slate-200 space-y-2 text-xs shadow-2xs">
-                <div className="flex justify-between text-slate-600">
-                  <span>Subtotal</span>
-                  <span className="font-bold text-slate-800">
-                    {currencySymbol} {billSummary.subtotal.toLocaleString()}
-                  </span>
-                </div>
+                    {showAddGuestInput && (
+                      <div className="flex gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                        <input
+                          type="text"
+                          placeholder="Enter diner name (e.g. Ali)"
+                          value={newGuestName}
+                          onChange={(e) => setNewGuestName(e.target.value)}
+                          maxLength={20}
+                          className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs bg-white text-slate-900 focus:outline-none focus:border-orange-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddGuest}
+                          className="px-3 py-1.5 rounded-lg bg-orange-600 text-white font-bold text-xs shadow-xs"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    )}
 
-                <div className="flex justify-between text-slate-600">
-                  <span>Government Tax ({taxPercent}%)</span>
-                  <span className="font-bold text-slate-800">
-                    {currencySymbol} {billSummary.taxAmount.toLocaleString()}
-                  </span>
-                </div>
+                    <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                      {guests.map((g, idx) => {
+                        const isActive = idx === activeGuestIdx;
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setActiveGuestIdx(idx)}
+                            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${
+                              isActive
+                                ? 'bg-orange-600 text-white shadow-xs'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80'
+                            }`}
+                          >
+                            {g}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-                <div className="border-t border-slate-200 pt-2 flex justify-between items-center text-sm font-black text-slate-900">
-                  <span>Grand Total</span>
-                  <span className="text-base text-orange-600 font-extrabold">
-                    {currencySymbol} {billSummary.grandTotal.toLocaleString()}
-                  </span>
+                  {/* Tap Ordered Items to Claim */}
+                  <div className="space-y-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                      2. Tap Ordered Items for {guests[activeGuestIdx]}
+                    </span>
+
+                    <div className="space-y-2">
+                      {allOrderItems.map((item) => {
+                        const key = `${activeGuestIdx}_${item.id}`;
+                        const qtyClaimedByActive = claimMap[key] || 0;
+
+                        // Total claimed by everyone
+                        let totalClaimed = 0;
+                        guests.forEach((_, idx) => {
+                          totalClaimed += claimMap[`${idx}_${item.id}`] || 0;
+                        });
+
+                        const unclaimedCount = Math.max(0, item.quantity - totalClaimed);
+                        const isFullyClaimed = unclaimedCount === 0;
+
+                        return (
+                          <div
+                            key={item.id}
+                            className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                              qtyClaimedByActive > 0
+                                ? 'border-orange-400 bg-orange-50/50 shadow-2xs'
+                                : 'border-slate-200/80 bg-white'
+                            }`}
+                          >
+                            <div className="min-w-0 space-y-0.5">
+                              <div className="font-bold text-xs text-slate-900 truncate">
+                                {item.quantity}x {item.item_name}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {currencySymbol} {Number(item.unit_price).toLocaleString()} each •{' '}
+                                {isFullyClaimed ? (
+                                  <span className="text-emerald-600 font-bold">All {item.quantity} claimed</span>
+                                ) : (
+                                  <span className="text-amber-600 font-bold">{unclaimedCount} unclaimed</span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {qtyClaimedByActive > 0 ? (
+                                <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-orange-200 shadow-2xs">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDecrementClaim(item.id)}
+                                    className="w-6 h-6 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center font-bold"
+                                  >
+                                    <Minus className="w-3 h-3" />
+                                  </button>
+                                  <span className="w-5 text-center font-black text-xs text-orange-600">
+                                    {qtyClaimedByActive}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    disabled={unclaimedCount <= 0}
+                                    onClick={() => handleToggleClaimItem(item.id, item.quantity)}
+                                    className="w-6 h-6 rounded-lg bg-orange-600 disabled:opacity-30 text-white flex items-center justify-center font-bold"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={unclaimedCount <= 0}
+                                  onClick={() => handleToggleClaimItem(item.id, item.quantity)}
+                                  className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-orange-50 disabled:opacity-30 text-slate-800 hover:text-orange-600 text-xs font-bold border border-slate-200 transition"
+                                >
+                                  Claim
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Progress Indicator for Unclaimed Items */}
+                  {itemizedSplitResult.isFullyClaimed ? (
+                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2 text-xs font-bold text-emerald-800">
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>100% of bill claimed! All items assigned.</span>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-center gap-2 text-xs font-bold text-amber-800">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        {itemizedSplitResult.unclaimedItems.length} dish{itemizedSplitResult.unclaimedItems.length > 1 ? 'es' : ''} partially unclaimed ({currencySymbol} {(billSummary.grandTotal - itemizedSplitResult.claimedGrandTotal).toLocaleString()} remaining).
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Calculated Itemized Breakdown Cards (Stacked on Mobile, Side-by-Side on Desktop) */}
+                  <div className="space-y-2 pt-1">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                      3. Individual Shares (Itemized + Proportional Tax)
+                    </span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {itemizedSplitResult.shares.map((share, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-2xs space-y-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-xs text-slate-900">{share.guestLabel}</span>
+                            <span className="font-black text-sm text-orange-600">
+                              {currencySymbol} {share.grandTotal.toLocaleString()}
+                            </span>
+                          </div>
+
+                          {share.items.length === 0 ? (
+                            <p className="text-[11px] text-slate-400 italic">No dishes claimed yet</p>
+                          ) : (
+                            <div className="text-[11px] text-slate-500 space-y-0.5">
+                              {share.items.map((line, lIdx) => (
+                                <div key={lIdx} className="flex justify-between">
+                                  <span>{line.quantityClaimed}x {line.itemName}</span>
+                                  <span>{currencySymbol} {line.lineTotal.toLocaleString()}</span>
+                                </div>
+                              ))}
+                              <div className="pt-1 text-[10px] text-slate-400 flex justify-between border-t border-slate-100">
+                                <span>Tax ({taxPercent}%): {currencySymbol} {share.taxAmount.toLocaleString()}</span>
+                                <span className="font-semibold text-slate-700">Subtotal: {currencySymbol} {share.subtotal.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              )}
+            </>
           )}
         </div>
 
-        {/* Footer with helpful note */}
+        {/* Footer */}
         <div className="p-4 pb-6 sm:pb-4 border-t border-slate-100 bg-white shrink-0 text-center">
           <p className="text-[11px] text-slate-400">
-            Split billing and payments (Cash or Online) are available in Scene 5 & 6.
+            Payment settlement (Cash & Online Demo) is coming in Scene 6.
           </p>
         </div>
       </div>
