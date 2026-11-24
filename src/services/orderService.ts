@@ -1,15 +1,102 @@
 import { supabase } from './supabaseClient';
-import { CartItem, OrderStatus } from '../types';
+import { CartItem, OrderStatus, Modifier } from '../types';
 
 export const orderService = {
   /**
-   * Fetches all available menu catalog items
+   * Fetches all menu catalog items ordered by sort_order
    */
   async getMenuItems() {
-    return await supabase
+    const { data, error } = await supabase
       .from('menu_items')
       .select('*')
       .order('sort_order', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching menu items:', error);
+      return [];
+    }
+    return data || [];
+  },
+
+  /**
+   * Fetches all current cart items for a session, joining menu item details
+   */
+  async getCartItems(sessionId: string): Promise<CartItem[]> {
+    const { data, error } = await supabase
+      .from('cart_items')
+      .select('*, menu_item:menu_items(*)')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching cart items:', error);
+      return [];
+    }
+    return (data as CartItem[]) || [];
+  },
+
+  /**
+   * Adds an item with modifiers to the shared table cart.
+   * If an identical item + modifiers + note already exists, merges quantity.
+   */
+  async addToCart(
+    sessionId: string,
+    menuItemId: string,
+    quantity: number,
+    selectedModifiers: Modifier[],
+    note: string | null,
+    addedByGuestId: string
+  ) {
+    // Check for identical existing cart line
+    const { data: existingLines } = await supabase
+      .from('cart_items')
+      .select('*')
+      .eq('session_id', sessionId)
+      .eq('menu_item_id', menuItemId);
+
+    const match = existingLines?.find((line) => {
+      const sameNote = (line.note || '') === (note || '');
+      const lineMods = (line.selected_modifiers || []) as Modifier[];
+      const sameMods =
+        lineMods.length === selectedModifiers.length &&
+        selectedModifiers.every((sm) => lineMods.some((lm) => lm.name === sm.name));
+      return sameNote && sameMods;
+    });
+
+    if (match) {
+      return await supabase
+        .from('cart_items')
+        .update({ quantity: match.quantity + quantity })
+        .eq('id', match.id);
+    }
+
+    return await supabase
+      .from('cart_items')
+      .insert({
+        session_id: sessionId,
+        menu_item_id: menuItemId,
+        quantity,
+        selected_modifiers: selectedModifiers,
+        note: note || null,
+        added_by_guest_id: addedByGuestId
+      });
+  },
+
+  /**
+   * Updates quantity of a cart line or deletes if quantity <= 0
+   */
+  async updateCartQuantity(cartItemId: string, quantity: number) {
+    if (quantity <= 0) {
+      return await supabase.from('cart_items').delete().eq('id', cartItemId);
+    }
+    return await supabase.from('cart_items').update({ quantity }).eq('id', cartItemId);
+  },
+
+  /**
+   * Deletes a cart item line
+   */
+  async removeFromCart(cartItemId: string) {
+    return await supabase.from('cart_items').delete().eq('id', cartItemId);
   },
 
   /**
@@ -43,7 +130,7 @@ export const orderService = {
       throw orderError || new Error('Failed to create order');
     }
 
-    // 2. Snapshot order items
+    // 2. Snapshot order items with base price + modifiers
     const orderItemsPayload = items.map((item) => ({
       order_id: order.id,
       menu_item_id: item.menu_item_id,

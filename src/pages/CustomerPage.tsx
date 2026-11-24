@@ -1,17 +1,30 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
 import { sessionService } from '../services/sessionService';
+import { orderService } from '../services/orderService';
 import { useSessionStore } from '../store/useSessionStore';
-import { TableSession } from '../types';
+import { TableSession, MenuItem, Modifier } from '../types';
 
-// Scene 1 Components
+// Components
 import BrandedLoader from '../components/customer/BrandedLoader';
 import PinGate from '../components/customer/PinGate';
 import ExpiredSessionScreen from '../components/customer/ExpiredSessionScreen';
+import MenuCard from '../components/customer/MenuCard';
+import ModifierModal from '../components/customer/ModifierModal';
 
 // Icons
-import { Bell, Droplets, ShoppingBag, Receipt, Sparkles, AlertTriangle, ArrowLeft } from 'lucide-react';
+import {
+  Bell,
+  Droplets,
+  ShoppingBag,
+  Receipt,
+  AlertTriangle,
+  ArrowLeft,
+  Search,
+  CheckCircle,
+  X
+} from 'lucide-react';
 
 export const CustomerPage: React.FC = () => {
   const { tableNumber: tableNumberParam } = useParams<{ tableNumber: string }>();
@@ -22,15 +35,30 @@ export const CustomerPage: React.FC = () => {
     settings,
     currentSession,
     isSessionExpired,
+    guestId,
+    cartItems,
     setGuestId,
     setTable,
     setSettings,
     setCurrentSession,
-    setIsSessionExpired
+    setIsSessionExpired,
+    setCartItems
   } = useSessionStore();
 
   const [isLoading, setIsLoading] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
+
+  // Scene 2: Menu & Filtering State
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Modifier Modal State
+  const [selectedItemForModal, setSelectedItemForModal] = useState<MenuItem | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Added Toast Notification
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Initialize Anonymous Guest ID and Session
   const initSession = useCallback(async () => {
@@ -45,16 +73,18 @@ export const CustomerPage: React.FC = () => {
       setInitError(null);
 
       // 1. Establish guest identity
-      const guestId = sessionService.getOrCreateGuestId();
-      setGuestId(guestId);
+      const gid = sessionService.getOrCreateGuestId();
+      setGuestId(gid);
 
       // 2. Fetch Restaurant Settings & Table Information in parallel
-      const [fetchedSettings, fetchedTable] = await Promise.all([
+      const [fetchedSettings, fetchedTable, fetchedMenu] = await Promise.all([
         sessionService.getRestaurantSettings(),
-        sessionService.getTableByNumber(tableNumber)
+        sessionService.getTableByNumber(tableNumber),
+        orderService.getMenuItems()
       ]);
 
       setSettings(fetchedSettings);
+      setMenuItems(fetchedMenu);
 
       if (!fetchedTable) {
         setInitError(`Table ${tableNumber} was not found in the restaurant system.`);
@@ -79,13 +109,17 @@ export const CustomerPage: React.FC = () => {
 
       setCurrentSession(session);
       setIsSessionExpired(session.status === 'CLOSED');
+
+      // 5. Fetch active cart items for this session
+      const items = await orderService.getCartItems(session.id);
+      setCartItems(items);
     } catch (err: any) {
       console.error('Session initialization error:', err);
       setInitError('Could not connect to table session. Please check your internet connection.');
     } finally {
       setIsLoading(false);
     }
-  }, [tableNumber, setGuestId, setSettings, setTable, setCurrentSession, setIsSessionExpired]);
+  }, [tableNumber, setGuestId, setSettings, setTable, setCurrentSession, setIsSessionExpired, setCartItems]);
 
   useEffect(() => {
     initSession();
@@ -124,19 +158,85 @@ export const CustomerPage: React.FC = () => {
     };
   }, [currentSession?.id, setCurrentSession, setIsSessionExpired]);
 
+  // Real-time listener for Menu Items Availability (Sold Out Toggles)
+  useEffect(() => {
+    const channel = supabase
+      .channel('menu-realtime-channel')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'menu_items'
+        },
+        (payload) => {
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            const updated = payload.new as MenuItem;
+            setMenuItems((prev) =>
+              prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
+            );
+          } else if (payload.eventType === 'INSERT' && payload.new) {
+            const newItem = payload.new as MenuItem;
+            setMenuItems((prev) => [...prev, newItem]);
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            setMenuItems((prev) => prev.filter((item) => item.id !== (payload.old as any).id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Real-time listener for Shared Table Cart
+  useEffect(() => {
+    if (!currentSession?.id) return;
+
+    const channel = supabase
+      .channel(`cart-${currentSession.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'cart_items',
+          filter: `session_id=eq.${currentSession.id}`
+        },
+        async () => {
+          // Re-fetch cart lines with joined menu items
+          const updatedCart = await orderService.getCartItems(currentSession.id);
+          setCartItems(updatedCart);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentSession?.id, setCartItems]);
+
   // Mobile Lock-Screen & Visibility Recovery
   useEffect(() => {
     if (!currentSession?.id) return;
 
     const handleResume = async () => {
       if (document.visibilityState === 'visible') {
-        const refreshed = await sessionService.refreshSession(currentSession.id);
-        if (refreshed) {
-          setCurrentSession(refreshed);
-          if (refreshed.status === 'CLOSED') {
+        const [refreshedSession, refreshedMenu, refreshedCart] = await Promise.all([
+          sessionService.refreshSession(currentSession.id),
+          orderService.getMenuItems(),
+          orderService.getCartItems(currentSession.id)
+        ]);
+
+        if (refreshedSession) {
+          setCurrentSession(refreshedSession);
+          if (refreshedSession.status === 'CLOSED') {
             setIsSessionExpired(true);
           }
         }
+        if (refreshedMenu.length > 0) setMenuItems(refreshedMenu);
+        setCartItems(refreshedCart);
       }
     };
 
@@ -147,7 +247,63 @@ export const CustomerPage: React.FC = () => {
       document.removeEventListener('visibilitychange', handleResume);
       window.removeEventListener('online', handleResume);
     };
-  }, [currentSession?.id, setCurrentSession, setIsSessionExpired]);
+  }, [currentSession?.id, setCurrentSession, setIsSessionExpired, setCartItems]);
+
+  // Categories list with 'All' prepended
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    menuItems.forEach((item) => {
+      if (item.category) set.add(item.category);
+    });
+    return ['All', ...Array.from(set)];
+  }, [menuItems]);
+
+  // Filtered dishes
+  const filteredItems = useMemo(() => {
+    return menuItems.filter((item) => {
+      const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        item.name.toLowerCase().includes(q) ||
+        (item.name_alt && item.name_alt.toLowerCase().includes(q)) ||
+        (item.description && item.description.toLowerCase().includes(q));
+      return matchesCategory && matchesSearch;
+    });
+  }, [menuItems, selectedCategory, searchQuery]);
+
+  // Handle dish card selection
+  const handleSelectDish = (item: MenuItem) => {
+    setSelectedItemForModal(item);
+    setIsModalOpen(true);
+  };
+
+  // Handle adding customized item to shared cart
+  const handleAddToCart = async (
+    item: MenuItem,
+    selectedModifiers: Modifier[],
+    note: string,
+    quantity: number
+  ) => {
+    if (!currentSession) return;
+
+    try {
+      await orderService.addToCart(
+        currentSession.id,
+        item.id,
+        quantity,
+        selectedModifiers,
+        note,
+        guestId || 'guest_user'
+      );
+
+      // Trigger ephemeral success toast
+      setToastMessage(`Added ${quantity}x ${item.name} to table cart`);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {
+      console.error('Failed to add to cart:', err);
+    }
+  };
 
   // Handle Seating PIN Verification
   const handleVerifyPin = async (enteredPin: string) => {
@@ -166,6 +322,9 @@ export const CustomerPage: React.FC = () => {
     initSession();
   };
 
+  // Total items currently in shared cart
+  const cartItemCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
+
   // 1. Loading State
   if (isLoading) {
     return (
@@ -176,7 +335,7 @@ export const CustomerPage: React.FC = () => {
     );
   }
 
-  // 2. Error State (Table not found or connection failure)
+  // 2. Error State
   if (initError || !table) {
     return (
       <div className="h-[100dvh] w-full flex flex-col justify-between bg-slate-900 text-white p-6">
@@ -204,7 +363,7 @@ export const CustomerPage: React.FC = () => {
     );
   }
 
-  // 3. Expired Session State (Waiter closed the session or bill was paid)
+  // 3. Expired Session State
   if (isSessionExpired) {
     return (
       <ExpiredSessionScreen
@@ -215,7 +374,7 @@ export const CustomerPage: React.FC = () => {
     );
   }
 
-  // 4. Seating PIN Gate (Active when require_seating_pin is enabled and PIN is not yet verified)
+  // 4. Seating PIN Gate
   if (settings?.require_seating_pin && currentSession && !currentSession.pin_verified) {
     return (
       <PinGate
@@ -226,92 +385,157 @@ export const CustomerPage: React.FC = () => {
     );
   }
 
-  // 5. Active Dining Session — Menu & Table Landing (Scene 1 Successful Entry)
+  // 5. Active Dining Menu & Ordering Experience
   return (
-    <div className="min-h-[100dvh] bg-slate-50 text-slate-900 pb-24 select-none">
-      {/* Sticky Header */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 px-4 py-3 shadow-xs">
-        <div className="max-w-md mx-auto flex items-center justify-between">
+    <div className="min-h-[100dvh] bg-slate-50 text-slate-900 pb-28">
+      {/* Sticky Top Header */}
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/90 shadow-2xs">
+        <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[11px] font-bold text-orange-600 uppercase tracking-wider">
+              <span className="text-[10px] font-extrabold text-orange-600 uppercase tracking-wider">
                 {settings?.name || 'Spice & Sizzle Bistro'}
               </span>
             </div>
-            <h1 className="text-lg font-black text-slate-900 leading-tight">
+            <h1 className="text-base font-black text-slate-900 leading-tight">
               {table.label}
             </h1>
           </div>
 
           <div className="flex items-center gap-1.5">
             <button
-              title="Need Water"
-              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 transition shadow-2xs"
+              title="Request Water"
+              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 transition shadow-2xs active:scale-95"
             >
               <Droplets className="w-3.5 h-3.5 text-blue-500" />
               <span>Water</span>
             </button>
             <button
-              title="Call Waiter"
-              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 transition shadow-2xs"
+              title="Call Server"
+              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 transition shadow-2xs active:scale-95"
             >
               <Bell className="w-3.5 h-3.5 text-orange-500" />
               <span>Waiter</span>
             </button>
           </div>
         </div>
+
+        {/* Search Bar */}
+        <div className="max-w-md mx-auto px-4 pb-2.5">
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search dishes, burgers, drinks..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-100 border border-slate-200/80 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-orange-500 transition"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Horizontal Category Navigation Tabs */}
+        <div className="max-w-md mx-auto overflow-x-auto no-scrollbar px-4 pb-2.5 flex items-center gap-1.5">
+          {categories.map((cat) => {
+            const isActive = selectedCategory === cat;
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setSelectedCategory(cat)}
+                className={`whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs font-bold transition select-none shrink-0 ${
+                  isActive
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/60'
+                }`}
+              >
+                {cat}
+              </button>
+            );
+          })}
+        </div>
       </header>
 
-      {/* Main Dining Landing */}
+      {/* Main Dishes Catalog Feed */}
       <main className="max-w-md mx-auto p-4 space-y-4">
-        {/* Connected Table Status Card */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-slate-800">Table Session Connected</div>
-              <p className="text-[11px] text-slate-500">
-                Shared cart active • Devices at this table sync live
-              </p>
-            </div>
-          </div>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold border border-slate-200">
-            OPEN
-          </span>
+        {/* Category Header */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
+            {selectedCategory === 'All' ? 'All Dishes' : selectedCategory} ({filteredItems.length})
+          </h2>
         </div>
 
-        {/* Scene 1 Success Welcome Banner */}
-        <div className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl p-5 text-white shadow-md space-y-2">
-          <div className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-white/20 backdrop-blur">
-            Scene 1 Ready
+        {/* Menu Items Grid */}
+        {filteredItems.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-2">
+            <p className="text-sm font-bold text-slate-700">No dishes found</p>
+            <p className="text-xs text-slate-400">Try a different search term or category.</p>
           </div>
-          <h2 className="text-xl font-black">Welcome to {table.label}</h2>
-          <p className="text-xs text-orange-100 leading-relaxed">
-            Your table session is active. You and anyone at this table share this live ordering session.
-          </p>
-        </div>
-
-        <div className="text-center py-6 text-xs text-slate-400">
-          Menu catalog browsing & modifiers are ready for Scene 2.
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            {filteredItems.map((item) => (
+              <MenuCard
+                key={item.id}
+                item={item}
+                currencySymbol={settings?.currency_symbol || 'Rs.'}
+                onSelect={handleSelectDish}
+              />
+            ))}
+          </div>
+        )}
       </main>
 
+      {/* Ephemeral Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-20 inset-x-0 z-50 flex justify-center px-4 pointer-events-none animate-fade-in">
+          <div className="bg-slate-900 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xl border border-slate-800 flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-400" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
       {/* Bottom Floating Bar */}
-      <nav className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 px-4 py-3 shadow-lg">
+      <nav className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 px-4 py-3 shadow-lg">
         <div className="max-w-md mx-auto flex items-center justify-between gap-3">
-          <button className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold transition">
+          <button
+            type="button"
+            className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold transition active:scale-[0.99]"
+          >
             <Receipt className="w-4 h-4 text-slate-600" />
             <span>Bill</span>
           </button>
-          <button className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-sm font-semibold shadow-md transition">
+
+          <button
+            type="button"
+            className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-sm font-semibold shadow-md transition active:scale-[0.99]"
+          >
             <ShoppingBag className="w-4 h-4" />
-            <span>Shared Cart (0)</span>
+            <span>Shared Cart ({cartItemCount})</span>
           </button>
         </div>
       </nav>
+
+      {/* Modifier Bottom Sheet Modal */}
+      <ModifierModal
+        item={selectedItemForModal}
+        currencySymbol={settings?.currency_symbol || 'Rs.'}
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedItemForModal(null);
+        }}
+        onAddToCart={handleAddToCart}
+      />
     </div>
   );
 };
