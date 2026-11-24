@@ -3,6 +3,7 @@ import { supabase } from '../services/supabaseClient';
 import { posService, TableFloorState } from '../services/posService';
 import { RestaurantSettings } from '../types';
 import { TableCard } from '../components/waiter/TableCard';
+import { ServiceRequestQueue, EnrichedServiceRequest } from '../components/waiter/ServiceRequestQueue';
 import { soundAlert } from '../utils/soundAlert';
 import {
   Users,
@@ -157,6 +158,52 @@ export const WaiterPage: React.FC = () => {
     }
   };
 
+  // Step 1: Mark Request "On My Way" (Customer sees "Waiter is on the way")
+  const handleSetOnTheWay = async (requestId: string) => {
+    try {
+      await supabase
+        .from('service_requests')
+        .update({ status: 'ON_THE_WAY' })
+        .eq('id', requestId);
+      await loadFloor();
+    } catch (err) {
+      console.error('Error updating to ON_THE_WAY:', err);
+    }
+  };
+
+  // Step 2: Mark Request "Done" (Unlocks button on customer phone)
+  const handleSetDone = async (requestId: string) => {
+    try {
+      await supabase
+        .from('service_requests')
+        .update({ status: 'DONE', resolved_at: new Date().toISOString() })
+        .eq('id', requestId);
+      await loadFloor();
+    } catch (err) {
+      console.error('Error marking request DONE:', err);
+    }
+  };
+
+  // Extract all active service requests across all tables
+  const allActiveRequests = useMemo(() => {
+    const list: EnrichedServiceRequest[] = [];
+    floor.forEach((tableState) => {
+      tableState.serviceRequests.forEach((req) => {
+        if (req.status === 'PENDING' || req.status === 'ON_THE_WAY') {
+          list.push({
+            ...req,
+            tableNumber: tableState.table.table_number,
+            tableLabel: tableState.table.label
+          });
+        }
+      });
+    });
+    // Longest waiting request at top
+    return list.sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+  }, [floor]);
+
   // Counts for tabs & summary
   const occupiedCount = floor.filter((t) => t.urgency !== 'FREE').length;
   const attentionCount = floor.filter(
@@ -249,104 +296,119 @@ export const WaiterPage: React.FC = () => {
           </div>
         </header>
 
-        {/* Quick Filter Tabs & Floor Metric Strip */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-900/80 p-2 sm:p-2.5 rounded-2xl border border-slate-800">
-          {/* Quick Filter Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-            <button
-              type="button"
-              onClick={() => setActiveTab('ALL')}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition shrink-0 ${
-                activeTab === 'ALL'
-                  ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              All Tables ({floor.length})
-            </button>
+        {/* Main Floor Content + Pinned Service Queue Sidebar */}
+        <div className="flex flex-col lg:flex-row gap-5 items-start">
+          {/* Left Column: Floor Plan & Table Grid */}
+          <div className="flex-1 w-full space-y-4">
+            {/* Quick Filter Tabs & Floor Metric Strip */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-900/80 p-2 sm:p-2.5 rounded-2xl border border-slate-800">
+              {/* Quick Filter Tabs */}
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('ALL')}
+                  className={`px-4 py-2 rounded-xl text-xs font-black transition shrink-0 ${
+                    activeTab === 'ALL'
+                      ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20'
+                      : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  All Tables ({floor.length})
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('OCCUPIED')}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'OCCUPIED'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-blue-400" />
-              <span>Occupied ({occupiedCount})</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('OCCUPIED')}
+                  className={`px-4 py-2 rounded-xl text-xs font-black transition shrink-0 flex items-center gap-1.5 ${
+                    activeTab === 'OCCUPIED'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                      : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-blue-400" />
+                  <span>Occupied ({occupiedCount})</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('ATTENTION')}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'ATTENTION'
-                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              {attentionCount > 0 && <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />}
-              <span>Needs Attention ({attentionCount})</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('ATTENTION')}
+                  className={`px-4 py-2 rounded-xl text-xs font-black transition shrink-0 flex items-center gap-1.5 ${
+                    activeTab === 'ATTENTION'
+                      ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
+                      : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  {attentionCount > 0 && <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />}
+                  <span>Needs Attention ({attentionCount})</span>
+                </button>
+              </div>
+
+              {/* Quick Legend Indicator */}
+              <div className="hidden xl:flex items-center gap-3 text-[11px] text-slate-400 px-2 font-semibold">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-slate-500" /> Free
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" /> Occupied
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" /> Cooking
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" /> Food Ready
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" /> Service Call
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-purple-500" /> Pay Cash
+                </span>
+              </div>
+            </div>
+
+            {/* Responsive Table Floor Grid (Phone: 1 col, Tablet: 2 cols, Desktop: 3 cols, Ultra-wide: 4 cols) */}
+            {isLoading ? (
+              <div className="py-24 text-center space-y-3">
+                <div className="w-10 h-10 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-xs text-slate-400 font-bold">Loading floor plan...</p>
+              </div>
+            ) : filteredFloor.length === 0 ? (
+              <div className="py-20 bg-slate-900/60 rounded-3xl border border-slate-800 text-center space-y-2 p-6">
+                <h3 className="text-sm font-bold text-slate-300">No tables matching this filter</h3>
+                <p className="text-xs text-slate-500">
+                  {activeTab === 'ATTENTION'
+                    ? 'All guest requests and ready orders have been cleared!'
+                    : 'No occupied tables currently.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredFloor.map((t) => (
+                  <TableCard
+                    key={t.table.id}
+                    tableState={t}
+                    currencySymbol={currencySymbol}
+                    requirePin={settings?.require_seating_pin}
+                    onSelectTable={(tableState) => setSelectedTable(tableState)}
+                    onSeatTable={handleSeatTable}
+                    onResolveService={handleResolveServiceRequest}
+                    onCollectCash={handleCloseSession}
+                    onMarkServed={handleMarkServed}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Quick Legend Indicator */}
-          <div className="hidden xl:flex items-center gap-3 text-[11px] text-slate-400 px-2 font-semibold">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-slate-500" /> Free
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-blue-500" /> Occupied
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-500" /> Cooking
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" /> Food Ready
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" /> Service Call
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-purple-500" /> Pay Cash
-            </span>
+          {/* Right Column: Dedicated Live Service Request Queue */}
+          <div className="w-full lg:w-80 xl:w-96 shrink-0 lg:sticky lg:top-5">
+            <ServiceRequestQueue
+              requests={allActiveRequests}
+              onSetOnTheWay={handleSetOnTheWay}
+              onSetDone={handleSetDone}
+            />
           </div>
         </div>
-
-        {/* Responsive Table Floor Grid (Phone: 1 col, Tablet: 2 cols, Desktop: 3 cols, Ultra-wide: 4 cols) */}
-        {isLoading ? (
-          <div className="py-24 text-center space-y-3">
-            <div className="w-10 h-10 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-xs text-slate-400 font-bold">Loading floor plan...</p>
-          </div>
-        ) : filteredFloor.length === 0 ? (
-          <div className="py-20 bg-slate-900/60 rounded-3xl border border-slate-800 text-center space-y-2 p-6">
-            <h3 className="text-sm font-bold text-slate-300">No tables matching this filter</h3>
-            <p className="text-xs text-slate-500">
-              {activeTab === 'ATTENTION'
-                ? 'All guest requests and ready orders have been cleared!'
-                : 'No occupied tables currently.'}
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
-            {filteredFloor.map((t) => (
-              <TableCard
-                key={t.table.id}
-                tableState={t}
-                currencySymbol={currencySymbol}
-                requirePin={settings?.require_seating_pin}
-                onSelectTable={(tableState) => setSelectedTable(tableState)}
-                onSeatTable={handleSeatTable}
-                onResolveService={handleResolveServiceRequest}
-                onCollectCash={handleCloseSession}
-                onMarkServed={handleMarkServed}
-              />
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Selected Table Detail Drawer / Modal */}
