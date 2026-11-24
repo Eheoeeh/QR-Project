@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Order, RestaurantSettings } from '../../types';
+import { Order, RestaurantSettings, SessionStatus } from '../../types';
 import {
   calculateBill,
   calculateEqualSplit,
@@ -18,7 +18,9 @@ import {
   Clock,
   AlertCircle,
   ShoppingBag,
-  ArrowRight
+  ArrowRight,
+  Banknote,
+  CheckCircle2
 } from 'lucide-react';
 
 interface BillModalProps {
@@ -28,7 +30,9 @@ interface BillModalProps {
   orders: Order[];
   settings: RestaurantSettings | null;
   cartItemCount?: number;
+  sessionStatus?: SessionStatus;
   onOpenCart?: () => void;
+  onPayCash?: () => Promise<void>;
 }
 
 type SplitMode = 'FULL' | 'EQUAL' | 'ITEMIZED';
@@ -40,10 +44,13 @@ export const BillModal: React.FC<BillModalProps> = ({
   orders,
   settings,
   cartItemCount = 0,
-  onOpenCart
+  sessionStatus = 'OPEN',
+  onOpenCart,
+  onPayCash
 }) => {
   const [splitMode, setSplitMode] = useState<SplitMode>('FULL');
   const [equalGuestCount, setEqualGuestCount] = useState<number>(3);
+  const [isRequestingCash, setIsRequestingCash] = useState<boolean>(false);
 
   // Itemized Split State
   const [guests, setGuests] = useState<string[]>(['Person 1', 'Person 2']);
@@ -622,12 +629,68 @@ export const BillModal: React.FC<BillModalProps> = ({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="p-4 pb-6 sm:pb-4 border-t border-slate-100 bg-white shrink-0 text-center">
-          <p className="text-[11px] text-slate-400">
-            Payment settlement (Cash & Online Demo) is coming in Scene 6.
-          </p>
-        </div>
+        {/* Footer: Scene 6 Pay Cash & Settlement Confirmation */}
+        {allOrderItems.length > 0 && (
+          <div className="p-4 pb-6 sm:pb-4 border-t border-slate-100 bg-white shrink-0">
+            {sessionStatus === 'BILL_REQUESTED' || isRequestingCash ? (
+              <div className="bg-emerald-50 border border-emerald-200/90 rounded-2xl p-3.5 text-center space-y-2 animate-fade-in">
+                <div className="w-9 h-9 mx-auto rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-emerald-950 uppercase tracking-wide">
+                    Waiter Notified to Collect Payment
+                  </h4>
+                  <p className="text-[11px] text-emerald-700 mt-0.5">
+                    A waiter is on the way to {tableLabel} to collect cash and close your bill.
+                  </p>
+                </div>
+
+                {/* Split Summary Reminder */}
+                <div className="pt-2 border-t border-emerald-200/60 text-xs font-bold text-emerald-900 flex items-center justify-between">
+                  <span>
+                    {splitMode === 'FULL' && 'Total Bill to Settle:'}
+                    {splitMode === 'EQUAL' && `Equal Share (${equalGuestCount} Diners):`}
+                    {splitMode === 'ITEMIZED' && 'Itemized Bill Total:'}
+                  </span>
+                  <span className="text-sm font-black text-emerald-700">
+                    {splitMode === 'FULL' && `${currencySymbol} ${billSummary.grandTotal.toLocaleString()}`}
+                    {splitMode === 'EQUAL' && `${currencySymbol} ${equalShares[0].toLocaleString()} each`}
+                    {splitMode === 'ITEMIZED' && `${currencySymbol} ${billSummary.grandTotal.toLocaleString()}`}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={isRequestingCash}
+                  onClick={async () => {
+                    if (onPayCash) {
+                      setIsRequestingCash(true);
+                      try {
+                        await onPayCash();
+                      } catch {
+                        setIsRequestingCash(false);
+                      }
+                    }
+                  }}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] disabled:opacity-50 text-white font-extrabold text-sm shadow-lg shadow-emerald-600/20 transition flex items-center justify-center gap-2"
+                >
+                  <Banknote className="w-5 h-5" />
+                  <span>
+                    {isRequestingCash
+                      ? 'Notifying Waiter...'
+                      : `Pay Cash • ${currencySymbol} ${billSummary.grandTotal.toLocaleString()}`}
+                  </span>
+                </button>
+                <p className="text-[11px] text-slate-400 text-center">
+                  Tapping Pay Cash alerts the waiter to collect cash at your table.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

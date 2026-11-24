@@ -17,6 +17,7 @@ import BillModal from '../components/customer/BillModal';
 import OrderStatusTracker from '../components/customer/OrderStatusTracker';
 import ServiceRequestModal from '../components/customer/ServiceRequestModal';
 import OrderSuccessTrackingView from '../components/customer/OrderSuccessTrackingView';
+import DigitalReceiptScreen from '../components/customer/DigitalReceiptScreen';
 
 // Icons
 import {
@@ -111,6 +112,16 @@ export const CustomerPage: React.FC = () => {
       const storedStatus = await sessionService.checkStoredSessionStatus(tableNumber);
       if (storedStatus.isClosed) {
         setIsSessionExpired(true);
+        if (storedStatus.session) {
+          setCurrentSession(storedStatus.session);
+          const { data: closedOrders } = await supabase
+            .from('orders')
+            .select('*, order_items(*)')
+            .eq('session_id', storedStatus.session.id)
+            .neq('status', 'CANCELLED')
+            .order('created_at', { ascending: true });
+          if (closedOrders) setOrders(closedOrders);
+        }
         setIsLoading(false);
         return;
       }
@@ -178,9 +189,11 @@ export const CustomerPage: React.FC = () => {
             const updated = payload.new as TableSession;
             setCurrentSession(updated);
             if (updated.status === 'CLOSED') {
+              sessionService.clearStoredToken(tableNumber);
               setIsSessionExpired(true);
             }
           } else if (payload.eventType === 'DELETE') {
+            sessionService.clearStoredToken(tableNumber);
             setIsSessionExpired(true);
           }
         }
@@ -463,6 +476,22 @@ export const CustomerPage: React.FC = () => {
     }
   };
 
+  // Scene 6: Pay Cash Request Workflow
+  const handlePayCash = async () => {
+    if (!currentSession) return;
+    try {
+      await sessionService.requestCashPayment(currentSession.id);
+      setCurrentSession({ ...currentSession, status: 'BILL_REQUESTED' });
+      const requests = await sessionService.getActiveServiceRequests(currentSession.id);
+      setActiveRequests(requests);
+      setToastMessage('Cash payment requested! Waiter notified to collect bill.');
+      setTimeout(() => setToastMessage(null), 3500);
+    } catch (err) {
+      console.error('Failed to request cash payment:', err);
+      alert('Could not notify waiter. Please try again or tap Call Waiter.');
+    }
+  };
+
   // Handle Seating PIN Verification
   const handleVerifyPin = async (enteredPin: string) => {
     if (!currentSession) return { success: false, message: 'No active session found.' };
@@ -543,12 +572,24 @@ export const CustomerPage: React.FC = () => {
     );
   }
 
-  // 3. Expired Session State
-  if (isSessionExpired) {
+  // 3. Expired or Closed Session State (Scene 6 Final Digital Receipt View)
+  if (isSessionExpired || currentSession?.status === 'CLOSED') {
+    if (orders.length > 0) {
+      return (
+        <DigitalReceiptScreen
+          restaurantName={settings?.name || 'Spice & Sizzle Bistro'}
+          tableLabel={table ? table.label : `Table ${tableNumber}`}
+          orders={orders}
+          settings={settings}
+          closedAt={currentSession?.closed_at}
+          onStartFresh={handleStartFresh}
+        />
+      );
+    }
     return (
       <ExpiredSessionScreen
         restaurantName={settings?.name || 'Spice & Sizzle Bistro'}
-        tableLabel={table.label}
+        tableLabel={table ? table.label : `Table ${tableNumber}`}
         onStartFresh={handleStartFresh}
       />
     );
@@ -588,11 +629,13 @@ export const CustomerPage: React.FC = () => {
           orders={orders}
           settings={settings}
           cartItemCount={cartItemCount}
+          sessionStatus={currentSession?.status}
           onOpenCart={() => {
             setIsBillModalOpen(false);
             setViewMode('menu');
             setIsCartDrawerOpen(true);
           }}
+          onPayCash={handlePayCash}
         />
 
         {/* Scene 4: Service Request Sheet Modal */}
@@ -845,7 +888,7 @@ export const CustomerPage: React.FC = () => {
         onPlaceOrder={handlePlaceOrder}
       />
 
-      {/* Live Bill Modal (Scene 5) */}
+      {/* Live Bill Modal (Scene 5 & 6) */}
       <BillModal
         isOpen={isBillModalOpen}
         onClose={() => setIsBillModalOpen(false)}
@@ -853,10 +896,12 @@ export const CustomerPage: React.FC = () => {
         orders={orders}
         settings={settings}
         cartItemCount={cartItemCount}
+        sessionStatus={currentSession?.status}
         onOpenCart={() => {
           setIsBillModalOpen(false);
           setIsCartDrawerOpen(true);
         }}
+        onPayCash={handlePayCash}
       />
 
       {/* Scene 4: Service Request Sheet Modal */}

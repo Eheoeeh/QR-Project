@@ -233,6 +233,48 @@ export const sessionService = {
   },
 
   /**
+   * Scene 6: Request cash settlement for the table session
+   * Updates session status to 'BILL_REQUESTED' and inserts a 'PAY_CASH' service request
+   */
+  async requestCashPayment(sessionId: string, note?: string) {
+    // 1. Update session status to BILL_REQUESTED
+    await supabase
+      .from('table_sessions')
+      .update({ status: 'BILL_REQUESTED' })
+      .eq('id', sessionId);
+
+    // 2. Insert service request to alert waiter dashboard
+    return await supabase
+      .from('service_requests')
+      .insert({
+        session_id: sessionId,
+        type: 'PAY_CASH',
+        note: note || 'Cash payment requested',
+        status: 'PENDING'
+      });
+  },
+
+  /**
+   * Scene 6: Closes table session and clears stored token
+   */
+  async closeSession(sessionId: string, tableNumber: number) {
+    await supabase
+      .from('table_sessions')
+      .update({
+        status: 'CLOSED',
+        closed_at: new Date().toISOString()
+      })
+      .eq('id', sessionId);
+
+    await supabase
+      .from('tables')
+      .update({ current_session_id: null })
+      .eq('table_number', tableNumber);
+
+    this.clearStoredToken(tableNumber);
+  },
+
+  /**
    * Updates service request status (e.g., ON_THE_WAY, DONE)
    */
   async updateServiceRequestStatus(requestId: string, status: ServiceRequestStatus) {
