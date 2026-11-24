@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply min-h-screen bg-slate-50 text-slate-900 font-sans;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* 80mm Virtual Monospace Thermal Receipt Styling */
+.thermal-receipt {
+  width: 80mm;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .printable-thermal,
+  .printable-thermal * {
+    visibility: visible;
+  }
+  .printable-thermal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    margin: 0;
+    padding: 2mm;
+  }
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+}
