@@ -135,6 +135,18 @@ export const WaiterPage: React.FC = () => {
     }
   };
 
+  // Handle Close Session & Settle Table from POS
+  const handleCloseSession = async (sessionId: string, tableId: number) => {
+    try {
+      await posService.closeSession(sessionId, tableId);
+      setSelectedTable(null);
+      await loadFloor();
+    } catch (err) {
+      console.error('Error closing session:', err);
+      alert('Could not close session. Please try again.');
+    }
+  };
+
   // Counts for tabs & summary
   const occupiedCount = floor.filter((t) => t.urgency !== 'FREE').length;
   const attentionCount = floor.filter(
@@ -228,16 +240,16 @@ export const WaiterPage: React.FC = () => {
         </header>
 
         {/* Quick Filter Tabs & Floor Metric Strip */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 p-2 sm:p-2.5 rounded-2xl border border-slate-800/80">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-900/80 p-2 sm:p-2.5 rounded-2xl border border-slate-800">
           {/* Quick Filter Tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
             <button
               type="button"
               onClick={() => setActiveTab('ALL')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition shrink-0 ${
+              className={`px-4 py-2 rounded-xl text-xs font-black transition shrink-0 ${
                 activeTab === 'ALL'
-                  ? 'bg-orange-600 text-white shadow-xs'
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                  ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20'
+                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
               }`}
             >
               All Tables ({floor.length})
@@ -246,10 +258,10 @@ export const WaiterPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('OCCUPIED')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center gap-1.5 ${
+              className={`px-4 py-2 rounded-xl text-xs font-black transition shrink-0 flex items-center gap-1.5 ${
                 activeTab === 'OCCUPIED'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-blue-400" />
@@ -259,10 +271,10 @@ export const WaiterPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('ATTENTION')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center gap-1.5 ${
+              className={`px-4 py-2 rounded-xl text-xs font-black transition shrink-0 flex items-center gap-1.5 ${
                 activeTab === 'ATTENTION'
-                  ? 'bg-rose-600 text-white shadow-xs'
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
+                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
               }`}
             >
               {attentionCount > 0 && <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />}
@@ -271,7 +283,7 @@ export const WaiterPage: React.FC = () => {
           </div>
 
           {/* Quick Legend Indicator */}
-          <div className="hidden md:flex items-center gap-3 text-[11px] text-slate-400 px-2 font-medium">
+          <div className="hidden xl:flex items-center gap-3 text-[11px] text-slate-400 px-2 font-semibold">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-slate-500" /> Free
             </span>
@@ -293,7 +305,7 @@ export const WaiterPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Responsive Table Floor Grid (Phone: 1 col, Tablet: 2-3 cols, Desktop: 3-4 cols) */}
+        {/* Responsive Table Floor Grid (Phone: 1 col, Tablet: 2 cols, Desktop: 3 cols, Ultra-wide: 4 cols) */}
         {isLoading ? (
           <div className="py-24 text-center space-y-3">
             <div className="w-10 h-10 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto" />
@@ -304,12 +316,12 @@ export const WaiterPage: React.FC = () => {
             <h3 className="text-sm font-bold text-slate-300">No tables matching this filter</h3>
             <p className="text-xs text-slate-500">
               {activeTab === 'ATTENTION'
-                ? 'All guest requests and ready orders have been cleared! Great job.'
+                ? 'All guest requests and ready orders have been cleared!'
                 : 'No occupied tables currently.'}
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
             {filteredFloor.map((t) => (
               <TableCard
                 key={t.table.id}
@@ -465,15 +477,33 @@ export const WaiterPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Financial Running Total */}
-              <div className="bg-slate-800 rounded-2xl p-3.5 border border-slate-700 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                    Running Total (Inc. 16% Tax)
-                  </span>
-                  <span className="text-base font-black text-white">
-                    {currencySymbol} {selectedTable.runningTotal.toLocaleString()}
-                  </span>
+              {/* Financial Running Total & Settlement Action */}
+              <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                      Running Total (Inc. 16% Tax)
+                    </span>
+                    <span className="text-lg font-black text-white">
+                      {currencySymbol} {Math.round(selectedTable.runningTotal).toLocaleString()}
+                    </span>
+                  </div>
+
+                  {selectedTable.session && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCloseSession(
+                          selectedTable.session!.id,
+                          selectedTable.table.id
+                        )
+                      }
+                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-xs shadow-md transition flex items-center gap-1.5 shrink-0"
+                    >
+                      <DollarSign className="w-4 h-4" />
+                      <span>Collect & Close Table</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

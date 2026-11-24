@@ -9,7 +9,8 @@ import {
   DollarSign,
   UserPlus,
   BellRing,
-  ChevronRight
+  ChevronRight,
+  Flame
 } from 'lucide-react';
 
 interface TableCardProps {
@@ -33,55 +34,56 @@ export const TableCard: React.FC<TableCardProps> = ({
   // Extract clean zone name from table label (e.g. "Indoor Window" from "Table 1 (Indoor Window)")
   const zoneName = table.label.includes('(')
     ? table.label.split('(')[1]?.replace(')', '')
-    : 'Main Dining';
+    : table.label.replace(`Table ${table.table_number}`, '').trim() || 'Main Dining';
+
+  const isFree = urgency === 'FREE';
 
   // Get color styles for urgency states
   const getCardStyles = () => {
     switch (urgency) {
       case 'SERVICE_PENDING':
         return {
-          card: 'border-rose-500 bg-rose-950/30 hover:border-rose-400 shadow-lg shadow-rose-950/40 ring-1 ring-rose-500/50',
+          card: 'border-rose-500 bg-rose-950/30 hover:border-rose-400 shadow-xl shadow-rose-950/40 ring-1 ring-rose-500/50',
           badge: 'bg-rose-600 text-white animate-pulse',
           dot: 'bg-white'
         };
       case 'BILL_REQUESTED':
         return {
-          card: 'border-purple-500 bg-purple-950/30 hover:border-purple-400 shadow-lg shadow-purple-950/40 ring-1 ring-purple-500/40',
-          badge: 'bg-purple-600 text-white',
-          dot: 'bg-purple-300'
+          card: 'border-purple-500 bg-purple-950/30 hover:border-purple-400 shadow-xl shadow-purple-950/40 ring-1 ring-purple-500/50',
+          badge: 'bg-purple-600 text-white font-black',
+          dot: 'bg-purple-200'
         };
       case 'READY_TO_SERVE':
         return {
-          card: 'border-emerald-500 bg-emerald-950/30 hover:border-emerald-400 shadow-lg shadow-emerald-950/40 ring-1 ring-emerald-500/40',
+          card: 'border-emerald-500 bg-emerald-950/30 hover:border-emerald-400 shadow-xl shadow-emerald-950/40 ring-1 ring-emerald-500/50',
           badge: 'bg-emerald-600 text-white animate-pulse',
           dot: 'bg-emerald-200'
         };
       case 'ORDER_PENDING':
         return {
-          card: 'border-amber-500/60 bg-amber-950/20 hover:border-amber-400 shadow-md shadow-amber-950/30',
-          badge: 'bg-amber-500/20 text-amber-300 border border-amber-500/40',
+          card: 'border-amber-500/60 bg-amber-950/20 hover:border-amber-400/90 shadow-md shadow-amber-950/30',
+          badge: 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold',
           dot: 'bg-amber-400'
         };
       case 'OCCUPIED':
         return {
-          card: 'border-blue-500/40 bg-blue-950/20 hover:border-blue-400/80',
-          badge: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
+          card: 'border-blue-500/40 bg-blue-950/20 hover:border-blue-400/80 shadow-sm',
+          badge: 'bg-blue-500/20 text-blue-300 border border-blue-500/30 font-bold',
           dot: 'bg-blue-400'
         };
       case 'FREE':
       default:
         return {
-          card: 'border-slate-800 bg-slate-800/40 hover:border-slate-700 text-slate-500',
-          badge: 'bg-slate-800 text-slate-400 border border-slate-700/60',
+          card: 'border-slate-800/90 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 text-slate-500',
+          badge: 'bg-slate-800 text-slate-400 border border-slate-700/60 font-semibold',
           dot: 'bg-slate-500'
         };
     }
   };
 
   const styles = getCardStyles();
-  const isFree = urgency === 'FREE';
 
-  // Format seated duration (e.g. "45m" or "1h 15m")
+  // Format seated duration (e.g. "45m" or "1h 26m")
   const formatDuration = (mins: number) => {
     if (mins < 60) return `${mins}m seated`;
     const hours = Math.floor(mins / 60);
@@ -89,46 +91,54 @@ export const TableCard: React.FC<TableCardProps> = ({
     return `${hours}h ${remMins}m seated`;
   };
 
+  // Clean rounded running total
+  const formattedTotal = Math.round(runningTotal).toLocaleString();
+
   return (
     <div
       onClick={() => onSelectTable(tableState)}
-      className={`rounded-2xl p-4 border transition-all duration-200 cursor-pointer flex flex-col justify-between min-h-[195px] select-none ${styles.card}`}
+      className={`rounded-2xl p-4 border transition-all duration-200 cursor-pointer flex flex-col justify-between select-none ${styles.card} ${
+        isFree ? 'min-h-[175px]' : 'min-h-[200px]'
+      }`}
     >
-      {/* Top Row: Table Number, Zone Label & Status Pill */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-lg font-black text-white tracking-tight">
-              Table {table.table_number}
-            </span>
-            <span className="text-xs text-slate-400 font-medium truncate max-w-[110px]">
-              {zoneName}
-            </span>
+      {/* Top Header: Table Title & Status Badge */}
+      <div className="space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          {/* Table Number & Zone (Never wrap "Table 1") */}
+          <div className="min-w-0 pr-1">
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-xl font-black text-white whitespace-nowrap tracking-tight">
+                Table {table.table_number}
+              </span>
+              <span className="text-xs text-slate-400 font-medium truncate">
+                {zoneName}
+              </span>
+            </div>
           </div>
 
           {/* Status Badge */}
           <span
-            className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1.5 shrink-0 ${styles.badge}`}
+            className={`text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1.5 shrink-0 whitespace-nowrap ${styles.badge}`}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${styles.dot}`} />
             <span>{urgencyLabel}</span>
           </span>
         </div>
 
-        {/* PIN Badge if Seated */}
+        {/* PIN Badge if Table has an active session */}
         {session && (requirePin || session.seating_pin) && (
-          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-800/90 border border-slate-700 text-[11px] font-mono text-amber-300">
-            <Key className="w-3 h-3 text-amber-400" />
-            <span className="font-bold">PIN: {session.seating_pin}</span>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/80 border border-slate-800 text-xs font-mono text-amber-300 shadow-2xs">
+            <Key className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="font-extrabold tracking-wider">PIN: {session.seating_pin}</span>
           </div>
         )}
       </div>
 
-      {/* Middle Row: Operational Details */}
-      <div className="py-2.5 space-y-2">
+      {/* Middle Body: Dynamic state based on occupancy */}
+      <div className="py-2">
         {isFree ? (
-          <div className="py-3 text-center space-y-2">
-            <p className="text-xs text-slate-500">Ready for walk-in guests or QR scan</p>
+          <div className="py-3 flex flex-col items-center justify-center text-center space-y-2.5">
+            <p className="text-xs text-slate-500 font-medium">Table Vacant • Ready for Guests</p>
             {onSeatTable && (
               <button
                 type="button"
@@ -136,18 +146,18 @@ export const TableCard: React.FC<TableCardProps> = ({
                   e.stopPropagation();
                   onSeatTable(table.id, table.table_number);
                 }}
-                className="inline-flex items-center gap-1.5 py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 transition"
+                className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-xs font-extrabold text-slate-200 transition shadow-xs"
               >
-                <UserPlus className="w-3.5 h-3.5 text-blue-400" />
+                <UserPlus className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                 <span>Seat Table / PIN</span>
               </button>
             )}
           </div>
         ) : (
-          <div className="space-y-1.5 text-xs">
-            {/* Active Urgent Notification Alert (Water / Waiter / Cash) */}
+          <div className="space-y-2 text-xs">
+            {/* Active Service Call Notification (Water / Waiter / Cash) */}
             {serviceRequests.length > 0 && (
-              <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-700/80 flex items-center justify-between text-xs">
+              <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 flex items-center justify-between gap-2 shadow-sm">
                 <div className="flex items-center gap-2 min-w-0">
                   {serviceRequests[0].type === 'WATER' && (
                     <Droplets className="w-4 h-4 text-blue-400 shrink-0" />
@@ -158,14 +168,14 @@ export const TableCard: React.FC<TableCardProps> = ({
                   {serviceRequests[0].type === 'PAY_CASH' && (
                     <DollarSign className="w-4 h-4 text-purple-400 shrink-0" />
                   )}
-                  <span className="font-black text-slate-200 truncate">
+                  <span className="font-extrabold text-white truncate">
                     {serviceRequests[0].type === 'WATER' && 'Needs Water'}
                     {serviceRequests[0].type === 'CALL_WAITER' && 'Call Waiter'}
                     {serviceRequests[0].type === 'PAY_CASH' && 'Cash Bill Requested'}
                     {serviceRequests[0].type === 'OTHER' && (serviceRequests[0].note || 'Special Request')}
                   </span>
                 </div>
-                <span className="text-[10px] text-slate-400 shrink-0">
+                <span className="text-[10px] text-slate-400 font-medium shrink-0">
                   {new Date(serviceRequests[0].created_at).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit'
@@ -174,23 +184,28 @@ export const TableCard: React.FC<TableCardProps> = ({
               </div>
             )}
 
-            {/* Food Cooking / Ready Alert */}
-            {tableState.hasReadyFood && (
-              <div className="p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 flex items-center gap-2 text-xs font-black">
+            {/* Food Status Notice */}
+            {tableState.hasReadyFood ? (
+              <div className="p-2 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 flex items-center gap-2 text-xs font-extrabold">
                 <BellRing className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
-                <span>Hot food plated at pass — Ready to serve!</span>
+                <span>Food Ready at Pass — Deliver Now!</span>
               </div>
-            )}
+            ) : tableState.urgency === 'ORDER_PENDING' ? (
+              <div className="p-2 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 flex items-center gap-2 text-xs font-bold">
+                <Flame className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Dishes Cooking in Kitchen</span>
+              </div>
+            ) : null}
 
-            {/* Seated Duration & Order Counts */}
-            <div className="flex items-center justify-between text-slate-400 text-[11px] pt-1">
-              <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3 text-slate-500" />
+            {/* Seated Duration & Placed Orders Metadata */}
+            <div className="flex items-center justify-between text-slate-400 text-xs pt-0.5">
+              <span className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 <span>{formatDuration(seatedDurationMinutes)}</span>
               </span>
 
-              <span className="flex items-center gap-1">
-                <Utensils className="w-3 h-3 text-slate-500" />
+              <span className="flex items-center gap-1.5">
+                <Utensils className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 <span>
                   {orders.length === 0
                     ? 'Browsing menu'
@@ -202,22 +217,24 @@ export const TableCard: React.FC<TableCardProps> = ({
         )}
       </div>
 
-      {/* Bottom Row: Running Total & View Action */}
-      <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-        <div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-            Running Bill
-          </span>
-          <span className="text-sm font-black text-white">
-            {currencySymbol} {runningTotal.toLocaleString()}
-          </span>
-        </div>
+      {/* Bottom Footer: ONLY shown for Occupied tables */}
+      {!isFree && (
+        <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">
+              Running Total
+            </span>
+            <span className="text-base font-black text-white">
+              {currencySymbol} {formattedTotal}
+            </span>
+          </div>
 
-        <div className="inline-flex items-center gap-1 text-xs font-bold text-slate-400 group-hover:text-white transition">
-          <span>Manage</span>
-          <ChevronRight className="w-3.5 h-3.5" />
+          <div className="inline-flex items-center gap-1 text-xs font-extrabold text-orange-400 hover:text-orange-300 transition">
+            <span>Manage</span>
+            <ChevronRight className="w-4 h-4" />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
