@@ -12,6 +12,8 @@ import PinGate from '../components/customer/PinGate';
 import ExpiredSessionScreen from '../components/customer/ExpiredSessionScreen';
 import MenuCard from '../components/customer/MenuCard';
 import ModifierModal from '../components/customer/ModifierModal';
+import SharedCartDrawer from '../components/customer/SharedCartDrawer';
+import BillModal from '../components/customer/BillModal';
 
 // Icons
 import {
@@ -22,7 +24,8 @@ import {
   ArrowLeft,
   Search,
   CheckCircle,
-  X
+  X,
+  ArrowRight
 } from 'lucide-react';
 
 export const CustomerPage: React.FC = () => {
@@ -54,9 +57,11 @@ export const CustomerPage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Modifier Modal State
+  // Modals & Drawers State
   const [selectedItemForModal, setSelectedItemForModal] = useState<MenuItem | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isModifierModalOpen, setIsModifierModalOpen] = useState(false);
+  const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
+  const [isBillModalOpen, setIsBillModalOpen] = useState(false);
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -205,7 +210,7 @@ export const CustomerPage: React.FC = () => {
     };
   }, []);
 
-  // Real-time listener for Shared Table Cart
+  // Real-time listener for Shared Table Cart (Inserts, Updates, Deletions)
   useEffect(() => {
     if (!currentSession?.id) return;
 
@@ -237,10 +242,15 @@ export const CustomerPage: React.FC = () => {
 
     const handleResume = async () => {
       if (document.visibilityState === 'visible') {
-        const [refreshedSession, refreshedMenu, refreshedCart] = await Promise.all([
+        const [refreshedSession, refreshedMenu, refreshedCart, refreshedOrders] = await Promise.all([
           sessionService.refreshSession(currentSession.id),
           orderService.getMenuItems(),
-          orderService.getCartItems(currentSession.id)
+          orderService.getCartItems(currentSession.id),
+          supabase
+            .from('orders')
+            .select('*, order_items(*)')
+            .eq('session_id', currentSession.id)
+            .neq('status', 'CANCELLED')
         ]);
 
         if (refreshedSession) {
@@ -251,6 +261,7 @@ export const CustomerPage: React.FC = () => {
         }
         if (refreshedMenu.length > 0) setMenuItems(refreshedMenu);
         setCartItems(refreshedCart);
+        if (refreshedOrders.data) setOrders(refreshedOrders.data);
       }
     };
 
@@ -261,7 +272,7 @@ export const CustomerPage: React.FC = () => {
       document.removeEventListener('visibilitychange', handleResume);
       window.removeEventListener('online', handleResume);
     };
-  }, [currentSession?.id, setCurrentSession, setIsSessionExpired, setCartItems]);
+  }, [currentSession?.id, setCurrentSession, setIsSessionExpired, setCartItems, setOrders]);
 
   // Categories list with 'All' prepended
   const categories = useMemo(() => {
@@ -289,7 +300,7 @@ export const CustomerPage: React.FC = () => {
   // Handle dish card selection
   const handleSelectDish = (item: MenuItem) => {
     setSelectedItemForModal(item);
-    setIsModalOpen(true);
+    setIsModifierModalOpen(true);
   };
 
   // Handle adding customized item to shared cart
@@ -311,11 +322,46 @@ export const CustomerPage: React.FC = () => {
         guestId || 'guest_user'
       );
 
-      // Trigger ephemeral success toast
-      setToastMessage(`Added ${quantity}x ${item.name} to table cart`);
+      setToastMessage(`Added ${quantity}x ${item.name} to shared cart`);
       setTimeout(() => setToastMessage(null), 3000);
     } catch (err) {
       console.error('Failed to add to cart:', err);
+    }
+  };
+
+  // Cart operations
+  const handleUpdateCartQuantity = async (cartItemId: string, newQuantity: number) => {
+    await orderService.updateCartQuantity(cartItemId, newQuantity);
+  };
+
+  const handleRemoveCartItem = async (cartItemId: string) => {
+    await orderService.removeFromCart(cartItemId);
+  };
+
+  // Submit Order Workflow (Scene 3)
+  const handlePlaceOrder = async () => {
+    if (!currentSession || cartItems.length === 0 || !table) return;
+
+    try {
+      await orderService.submitOrder(currentSession.id, cartItems, table.table_number);
+
+      // Re-fetch orders so live bill updates immediately
+      const { data: updatedOrders } = await supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .eq('session_id', currentSession.id)
+        .neq('status', 'CANCELLED');
+
+      if (updatedOrders) {
+        setOrders(updatedOrders);
+      }
+
+      setCartItems([]);
+      setToastMessage('Order placed! The kitchen is preparing your food.');
+      setTimeout(() => setToastMessage(null), 4000);
+    } catch (err) {
+      console.error('Failed to place order:', err);
+      alert('Could not submit order. Please try again.');
     }
   };
 
@@ -355,12 +401,22 @@ export const CustomerPage: React.FC = () => {
     initSession();
   };
 
-  // Total items currently in shared cart
+  // Total items and running subtotal currently in shared cart
   const cartItemCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
+  const cartSubtotal = cartItems.reduce((acc, item) => {
+    const base = Number(item.menu_item?.base_price) || 0;
+    const modDelta = (item.selected_modifiers || []).reduce(
+      (sum, m) => sum + (Number(m.price_delta) || 0),
+      0
+    );
+    return acc + (base + modDelta) * item.quantity;
+  }, 0);
 
-  // Compute Live Bill Running Total
+  // Compute Live Bill Running Total from submitted orders
   const runningTotal = useMemo(() => {
-    const allOrderItems: OrderItem[] = orders.flatMap((o) => o.order_items || []);
+    const allOrderItems: OrderItem[] = orders
+      .filter((o) => o.status !== 'CANCELLED')
+      .flatMap((o) => o.order_items || []);
     const subtotal = allOrderItems.reduce((sum, item) => sum + (Number(item.unit_price) * item.quantity), 0);
     const taxPercent = settings?.tax_percent || 16;
     const tax = (subtotal * taxPercent) / 100;
@@ -429,7 +485,7 @@ export const CustomerPage: React.FC = () => {
 
   // 5. Active Dining Menu & Ordering Experience
   return (
-    <div className="min-h-[100dvh] bg-slate-50 text-slate-900 pb-28">
+    <div className="min-h-[100dvh] bg-slate-50 text-slate-900 pb-36">
       {/* Sticky Top Header: Restaurant Name & Table Number on Left; Service Bell & Live Bill pill on Right */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/90 shadow-2xs">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
@@ -461,16 +517,18 @@ export const CustomerPage: React.FC = () => {
               <span className="hidden xs:inline">Service</span>
             </button>
 
-            {/* Live Bill Pill (displaying running total in Rs.) */}
-            <div
+            {/* Live Bill Pill (Tapping opens BillModal) */}
+            <button
+              type="button"
+              onClick={() => setIsBillModalOpen(true)}
               title="Running Live Bill"
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-900 text-white text-xs font-black shadow-2xs border border-slate-800"
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-black shadow-2xs border border-slate-800 transition active:scale-95 cursor-pointer"
             >
               <Receipt className="w-3.5 h-3.5 text-orange-400" />
               <span>
                 {settings?.currency_symbol || 'Rs.'} {runningTotal.toLocaleString()}
               </span>
-            </div>
+            </button>
           </div>
         </div>
 
@@ -496,7 +554,7 @@ export const CustomerPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Pinned Single Horizontal Row of Category Pills (Smooth Swipe) */}
+        {/* Pinned Single Horizontal Row of Category Pills */}
         <div className="max-w-2xl mx-auto overflow-x-auto no-scrollbar px-4 pb-2.5 flex items-center gap-2">
           {categories.map((cat) => {
             const isActive = selectedCategory === cat;
@@ -527,7 +585,7 @@ export const CustomerPage: React.FC = () => {
           </h2>
         </div>
 
-        {/* Dish Cards: Single Clean Column on Phones, Centered Two-Column on Tablets/Desktop */}
+        {/* Dish Cards: Single Column on Phones, Two-Column on Tablets/Desktop */}
         {filteredItems.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-2 shadow-2xs">
             <p className="text-sm font-bold text-slate-700">No dishes found</p>
@@ -557,20 +615,58 @@ export const CustomerPage: React.FC = () => {
         </div>
       )}
 
-      {/* Bottom Floating Bar */}
-      <nav className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 px-4 py-3 shadow-lg">
+      {/* Scene 3 Floating Bottom Cart Bar (Appears smoothly when cart has items) */}
+      {cartItemCount > 0 && (
+        <div className="fixed bottom-16 inset-x-0 z-40 px-4 pointer-events-none animate-slide-up">
+          <div className="max-w-2xl mx-auto pointer-events-auto">
+            <div
+              onClick={() => setIsCartDrawerOpen(true)}
+              className="bg-slate-900 text-white rounded-2xl p-3.5 shadow-2xl border border-slate-800 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-850 active:scale-[0.99] transition"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-sm">
+                  {cartItemCount}
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-orange-400 block">
+                    Shared Table Cart
+                  </span>
+                  <div className="text-sm font-black text-white truncate">
+                    {settings?.currency_symbol || 'Rs.'} {cartSubtotal.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-extrabold shadow transition shrink-0"
+              >
+                <span>Review Order</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Floating Nav Bar */}
+      <nav className="fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 px-4 py-2.5 shadow-lg">
         <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
+          {/* View Bill Button */}
           <button
             type="button"
-            className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold transition active:scale-[0.99]"
+            onClick={() => setIsBillModalOpen(true)}
+            className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition active:scale-[0.99]"
           >
             <Receipt className="w-4 h-4 text-slate-600" />
             <span>View Bill</span>
           </button>
 
+          {/* Cart Button */}
           <button
             type="button"
-            className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-sm font-semibold shadow-md transition active:scale-[0.99]"
+            onClick={() => setIsCartDrawerOpen(true)}
+            className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-md transition active:scale-[0.99]"
           >
             <ShoppingBag className="w-4 h-4" />
             <span>Shared Cart ({cartItemCount})</span>
@@ -582,12 +678,33 @@ export const CustomerPage: React.FC = () => {
       <ModifierModal
         item={selectedItemForModal}
         currencySymbol={settings?.currency_symbol || 'Rs.'}
-        isOpen={isModalOpen}
+        isOpen={isModifierModalOpen}
         onClose={() => {
-          setIsModalOpen(false);
+          setIsModifierModalOpen(false);
           setSelectedItemForModal(null);
         }}
         onAddToCart={handleAddToCart}
+      />
+
+      {/* Shared Cart Drawer (Scene 3) */}
+      <SharedCartDrawer
+        isOpen={isCartDrawerOpen}
+        onClose={() => setIsCartDrawerOpen(false)}
+        cartItems={cartItems}
+        currencySymbol={settings?.currency_symbol || 'Rs.'}
+        tableLabel={table.label}
+        onUpdateQuantity={handleUpdateCartQuantity}
+        onRemoveItem={handleRemoveCartItem}
+        onPlaceOrder={handlePlaceOrder}
+      />
+
+      {/* Live Bill Modal */}
+      <BillModal
+        isOpen={isBillModalOpen}
+        onClose={() => setIsBillModalOpen(false)}
+        tableLabel={table.label}
+        orders={orders}
+        settings={settings}
       />
     </div>
   );

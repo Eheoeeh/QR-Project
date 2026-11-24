@@ -113,9 +113,9 @@ export const orderService = {
   },
 
   /**
-   * Submits active cart items as an immutable order
+   * Submits active cart items as an immutable order and queues a kitchen print job
    */
-  async submitOrder(sessionId: string, items: CartItem[]) {
+  async submitOrder(sessionId: string, items: CartItem[], tableNumber: number = 1) {
     // 1. Create order record
     const { data: order, error: orderError } = await supabase
       .from('orders')
@@ -150,7 +150,23 @@ export const orderService = {
       throw itemsError;
     }
 
-    // 3. Clear session cart
+    // 3. Queue Virtual Thermal KOT print job
+    await supabase
+      .from('print_jobs')
+      .insert({
+        session_id: sessionId,
+        target: 'KITCHEN_KOT',
+        payload: {
+          order_id: order.id,
+          order_number: order.order_number,
+          table_number: tableNumber,
+          items: orderItemsPayload,
+          created_at: new Date().toISOString()
+        },
+        status: 'QUEUED'
+      });
+
+    // 4. Clear session cart
     await supabase
       .from('cart_items')
       .delete()
