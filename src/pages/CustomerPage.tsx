@@ -4,7 +4,7 @@ import { supabase } from '../services/supabaseClient';
 import { sessionService } from '../services/sessionService';
 import { orderService } from '../services/orderService';
 import { useSessionStore } from '../store/useSessionStore';
-import { TableSession, MenuItem, Modifier } from '../types';
+import { TableSession, MenuItem, Modifier, OrderItem } from '../types';
 
 // Components
 import BrandedLoader from '../components/customer/BrandedLoader';
@@ -16,7 +16,6 @@ import ModifierModal from '../components/customer/ModifierModal';
 // Icons
 import {
   Bell,
-  Droplets,
   ShoppingBag,
   Receipt,
   AlertTriangle,
@@ -37,12 +36,14 @@ export const CustomerPage: React.FC = () => {
     isSessionExpired,
     guestId,
     cartItems,
+    orders,
     setGuestId,
     setTable,
     setSettings,
     setCurrentSession,
     setIsSessionExpired,
-    setCartItems
+    setCartItems,
+    setOrders
   } = useSessionStore();
 
   const [isLoading, setIsLoading] = useState(true);
@@ -57,8 +58,11 @@ export const CustomerPage: React.FC = () => {
   const [selectedItemForModal, setSelectedItemForModal] = useState<MenuItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Added Toast Notification
+  // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Service Request Pending Status
+  const [isCallingWaiter, setIsCallingWaiter] = useState(false);
 
   // Initialize Anonymous Guest ID and Session
   const initSession = useCallback(async () => {
@@ -110,16 +114,27 @@ export const CustomerPage: React.FC = () => {
       setCurrentSession(session);
       setIsSessionExpired(session.status === 'CLOSED');
 
-      // 5. Fetch active cart items for this session
-      const items = await orderService.getCartItems(session.id);
+      // 5. Fetch active cart items and existing orders for this session
+      const [items, sessionOrders] = await Promise.all([
+        orderService.getCartItems(session.id),
+        supabase
+          .from('orders')
+          .select('*, order_items(*)')
+          .eq('session_id', session.id)
+          .neq('status', 'CANCELLED')
+      ]);
+
       setCartItems(items);
+      if (sessionOrders.data) {
+        setOrders(sessionOrders.data);
+      }
     } catch (err: any) {
       console.error('Session initialization error:', err);
       setInitError('Could not connect to table session. Please check your internet connection.');
     } finally {
       setIsLoading(false);
     }
-  }, [tableNumber, setGuestId, setSettings, setTable, setCurrentSession, setIsSessionExpired, setCartItems]);
+  }, [tableNumber, setGuestId, setSettings, setTable, setCurrentSession, setIsSessionExpired, setCartItems, setOrders]);
 
   useEffect(() => {
     initSession();
@@ -158,7 +173,7 @@ export const CustomerPage: React.FC = () => {
     };
   }, [currentSession?.id, setCurrentSession, setIsSessionExpired]);
 
-  // Real-time listener for Menu Items Availability (Sold Out Toggles)
+  // Real-time listener for Menu Items Availability (Instant Sold Out Toggle)
   useEffect(() => {
     const channel = supabase
       .channel('menu-realtime-channel')
@@ -205,7 +220,6 @@ export const CustomerPage: React.FC = () => {
           filter: `session_id=eq.${currentSession.id}`
         },
         async () => {
-          // Re-fetch cart lines with joined menu items
           const updatedCart = await orderService.getCartItems(currentSession.id);
           setCartItems(updatedCart);
         }
@@ -305,6 +319,25 @@ export const CustomerPage: React.FC = () => {
     }
   };
 
+  // Quick Service Bell Action
+  const handleCallWaiter = async () => {
+    if (!currentSession || isCallingWaiter) return;
+    setIsCallingWaiter(true);
+    try {
+      await sessionService.submitServiceRequest(currentSession.id, 'CALL_WAITER');
+      setToastMessage('Service call sent! A waiter is on the way.');
+    } catch (err: any) {
+      if (err?.code === '23505') {
+        setToastMessage('Waiter has already been notified and is on the way!');
+      } else {
+        setToastMessage('Service call dispatched to waiter staff.');
+      }
+    } finally {
+      setIsCallingWaiter(false);
+      setTimeout(() => setToastMessage(null), 3500);
+    }
+  };
+
   // Handle Seating PIN Verification
   const handleVerifyPin = async (enteredPin: string) => {
     if (!currentSession) return { success: false, message: 'No active session found.' };
@@ -324,6 +357,15 @@ export const CustomerPage: React.FC = () => {
 
   // Total items currently in shared cart
   const cartItemCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
+
+  // Compute Live Bill Running Total
+  const runningTotal = useMemo(() => {
+    const allOrderItems: OrderItem[] = orders.flatMap((o) => o.order_items || []);
+    const subtotal = allOrderItems.reduce((sum, item) => sum + (Number(item.unit_price) * item.quantity), 0);
+    const taxPercent = settings?.tax_percent || 16;
+    const tax = (subtotal * taxPercent) / 100;
+    return Math.round(subtotal + tax);
+  }, [orders, settings]);
 
   // 1. Loading State
   if (isLoading) {
@@ -388,41 +430,52 @@ export const CustomerPage: React.FC = () => {
   // 5. Active Dining Menu & Ordering Experience
   return (
     <div className="min-h-[100dvh] bg-slate-50 text-slate-900 pb-28">
-      {/* Sticky Top Header */}
+      {/* Sticky Top Header: Restaurant Name & Table Number on Left; Service Bell & Live Bill pill on Right */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/90 shadow-2xs">
-        <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[10px] font-extrabold text-orange-600 uppercase tracking-wider">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+          {/* Left: Restaurant Name + Table Number Badge */}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="min-w-0">
+              <span className="text-[10px] font-extrabold text-orange-600 uppercase tracking-wider block truncate">
                 {settings?.name || 'Spice & Sizzle Bistro'}
               </span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <h1 className="text-sm sm:text-base font-black text-slate-900 leading-tight truncate">
+                  {table.label}
+                </h1>
+              </div>
             </div>
-            <h1 className="text-base font-black text-slate-900 leading-tight">
-              {table.label}
-            </h1>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          {/* Right: Service Bell Button & Live Bill Pill */}
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
-              title="Request Water"
-              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 transition shadow-2xs active:scale-95"
-            >
-              <Droplets className="w-3.5 h-3.5 text-blue-500" />
-              <span>Water</span>
-            </button>
-            <button
+              type="button"
+              onClick={handleCallWaiter}
+              disabled={isCallingWaiter}
               title="Call Server"
-              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 transition shadow-2xs active:scale-95"
+              className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-full bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 transition shadow-2xs active:scale-95"
             >
               <Bell className="w-3.5 h-3.5 text-orange-500" />
-              <span>Waiter</span>
+              <span className="hidden xs:inline">Service</span>
             </button>
+
+            {/* Live Bill Pill (displaying running total in Rs.) */}
+            <div
+              title="Running Live Bill"
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-900 text-white text-xs font-black shadow-2xs border border-slate-800"
+            >
+              <Receipt className="w-3.5 h-3.5 text-orange-400" />
+              <span>
+                {settings?.currency_symbol || 'Rs.'} {runningTotal.toLocaleString()}
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Search Bar */}
-        <div className="max-w-md mx-auto px-4 pb-2.5">
+        <div className="max-w-2xl mx-auto px-4 pb-2.5">
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -443,8 +496,8 @@ export const CustomerPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Horizontal Category Navigation Tabs */}
-        <div className="max-w-md mx-auto overflow-x-auto no-scrollbar px-4 pb-2.5 flex items-center gap-1.5">
+        {/* Pinned Single Horizontal Row of Category Pills (Smooth Swipe) */}
+        <div className="max-w-2xl mx-auto overflow-x-auto no-scrollbar px-4 pb-2.5 flex items-center gap-2">
           {categories.map((cat) => {
             const isActive = selectedCategory === cat;
             return (
@@ -452,7 +505,7 @@ export const CustomerPage: React.FC = () => {
                 key={cat}
                 type="button"
                 onClick={() => setSelectedCategory(cat)}
-                className={`whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs font-bold transition select-none shrink-0 ${
+                className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold transition select-none shrink-0 ${
                   isActive
                     ? 'bg-slate-900 text-white shadow-xs'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/60'
@@ -466,17 +519,17 @@ export const CustomerPage: React.FC = () => {
       </header>
 
       {/* Main Dishes Catalog Feed */}
-      <main className="max-w-md mx-auto p-4 space-y-4">
+      <main className="max-w-2xl mx-auto p-4 space-y-4">
         {/* Category Header */}
         <div className="flex items-center justify-between">
-          <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
+          <h2 className="text-xs font-black uppercase tracking-wider text-slate-400">
             {selectedCategory === 'All' ? 'All Dishes' : selectedCategory} ({filteredItems.length})
           </h2>
         </div>
 
-        {/* Menu Items Grid */}
+        {/* Dish Cards: Single Clean Column on Phones, Centered Two-Column on Tablets/Desktop */}
         {filteredItems.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-2">
+          <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-2 shadow-2xs">
             <p className="text-sm font-bold text-slate-700">No dishes found</p>
             <p className="text-xs text-slate-400">Try a different search term or category.</p>
           </div>
@@ -498,7 +551,7 @@ export const CustomerPage: React.FC = () => {
       {toastMessage && (
         <div className="fixed top-20 inset-x-0 z-50 flex justify-center px-4 pointer-events-none animate-fade-in">
           <div className="bg-slate-900 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xl border border-slate-800 flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-emerald-400" />
+            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>{toastMessage}</span>
           </div>
         </div>
@@ -506,13 +559,13 @@ export const CustomerPage: React.FC = () => {
 
       {/* Bottom Floating Bar */}
       <nav className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 px-4 py-3 shadow-lg">
-        <div className="max-w-md mx-auto flex items-center justify-between gap-3">
+        <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
           <button
             type="button"
             className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold transition active:scale-[0.99]"
           >
             <Receipt className="w-4 h-4 text-slate-600" />
-            <span>Bill</span>
+            <span>View Bill</span>
           </button>
 
           <button

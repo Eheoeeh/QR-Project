@@ -26,7 +26,6 @@ export const ModifierModal: React.FC<ModifierModalProps> = ({
   const [note, setNote] = useState('');
   const [quantity, setQuantity] = useState(1);
 
-  // Reset modal state whenever a new item is opened
   React.useEffect(() => {
     if (isOpen) {
       setSelectedModifiers([]);
@@ -56,13 +55,16 @@ export const ModifierModal: React.FC<ModifierModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs transition-opacity"
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl max-h-[90dvh] flex flex-col overflow-hidden shadow-2xl animate-slide-up"
+        className="w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl max-h-[88dvh] flex flex-col overflow-hidden shadow-2xl transition-transform"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Bar */}
-        <div className="relative p-4 border-b border-slate-100 flex items-center justify-between">
+        {/* Sticky Header with Dish Title & Close Button */}
+        <div className="relative p-4 border-b border-slate-100 flex items-center justify-between shrink-0">
           <div>
             <h2 className="text-base font-bold text-slate-900">{item.name}</h2>
             {item.name_alt && (
@@ -77,9 +79,9 @@ export const ModifierModal: React.FC<ModifierModalProps> = ({
           </button>
         </div>
 
-        {/* Scrollable Content Body */}
-        <div className="overflow-y-auto p-4 space-y-5">
-          {/* Item Photo & Description */}
+        {/* Scrollable Modal Body */}
+        <div className="overflow-y-auto p-4 space-y-5 flex-1">
+          {/* Dish Image */}
           {item.image_url && (
             <div className="aspect-16/9 rounded-xl overflow-hidden bg-slate-100">
               <img
@@ -90,18 +92,19 @@ export const ModifierModal: React.FC<ModifierModalProps> = ({
             </div>
           )}
 
+          {/* Full Description */}
           {item.description && (
             <p className="text-xs text-slate-600 leading-relaxed">
               {item.description}
             </p>
           )}
 
-          {/* Modifiers Section */}
+          {/* Selectable Modifiers with Extra Charges beside each option */}
           {item.modifiers && item.modifiers.length > 0 && (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                  Custom Add-ons & Modifiers
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Select Add-ons
                 </span>
                 <span className="text-[11px] text-slate-400 font-medium">Optional</span>
               </div>
@@ -144,15 +147,15 @@ export const ModifierModal: React.FC<ModifierModalProps> = ({
             </div>
           )}
 
-          {/* Preparation Special Instructions */}
+          {/* Special Preparation Instructions Field */}
           <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Special Preparation Note</span>
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
+              <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
+              <span>Special Instructions</span>
             </div>
             <input
               type="text"
-              placeholder="e.g. Extra crispy, no onions, dressing on side..."
+              placeholder="e.g. no onions, extra crispy, sauce on the side..."
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={120}
@@ -160,7 +163,7 @@ export const ModifierModal: React.FC<ModifierModalProps> = ({
             />
           </div>
 
-          {/* Quantity Selector */}
+          {/* Quantity Stepper */}
           <div className="flex items-center justify-between pt-2 border-t border-slate-100">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Quantity
@@ -188,14 +191,14 @@ export const ModifierModal: React.FC<ModifierModalProps> = ({
           </div>
         </div>
 
-        {/* Sticky Action Footer */}
-        <div className="p-4 border-t border-slate-100 bg-white shadow-lg">
+        {/* Pinned Bottom Add Button (Anchored with safe home-indicator spacing) */}
+        <div className="p-4 pb-6 sm:pb-4 border-t border-slate-100 bg-white shadow-lg shrink-0">
           <button
             type="button"
             onClick={handleConfirm}
             className="w-full py-3.5 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-sm shadow-md transition flex items-center justify-between active:scale-[0.99]"
           >
-            <span>Add to Table Cart</span>
+            <span>Add to Cart</span>
             <span>
               {currencySymbol} {totalPrice.toLocaleString()}
             </span>

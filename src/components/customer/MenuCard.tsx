@@ -32,92 +32,84 @@ export const MenuCard: React.FC<MenuCardProps> = ({
   return (
     <div
       onClick={() => item.is_available && onSelect(item)}
-      className={`group relative bg-white rounded-2xl border transition-all duration-200 overflow-hidden flex flex-col justify-between shadow-2xs ${
+      className={`group relative bg-white rounded-2xl border p-3 sm:p-4 transition-all duration-200 flex gap-3.5 items-start justify-between shadow-xs ${
         item.is_available
           ? 'border-slate-200/80 hover:border-orange-400 hover:shadow-md cursor-pointer active:scale-[0.99]'
-          : 'border-slate-200 bg-slate-50/80 opacity-60 cursor-not-allowed select-none'
+          : 'border-slate-200 bg-slate-50/80 opacity-55 cursor-not-allowed select-none'
       }`}
     >
-      <div>
-        {/* Dish Image */}
-        <div className="relative aspect-16/10 w-full overflow-hidden bg-slate-100">
-          {item.image_url ? (
-            <img
-              src={item.image_url}
-              alt={item.name}
-              loading="lazy"
-              className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${
-                !item.is_available ? 'grayscale' : ''
-              }`}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-100 text-xs">
-              No photo
-            </div>
-          )}
-
-          {/* Sold Out Badge Overlay */}
-          {!item.is_available && (
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] flex items-center justify-center">
-              <span className="px-3 py-1 rounded-full bg-rose-600 text-white text-xs font-black uppercase tracking-wider shadow">
-                Sold Out
-              </span>
-            </div>
-          )}
-
-          {/* Category Tag & Spice Level */}
-          <div className="absolute top-2 left-2 flex items-center gap-1">
-            {renderSpiceIndicator()}
-          </div>
+      {/* Left Details Column */}
+      <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <h3 className="font-bold text-slate-900 text-sm leading-snug group-hover:text-orange-600 transition">
+            {item.name}
+          </h3>
+          {renderSpiceIndicator()}
         </div>
 
-        {/* Content Details */}
-        <div className="p-3.5 space-y-1.5">
-          <div className="flex items-start justify-between gap-1">
-            <h3 className="font-bold text-slate-900 text-sm leading-snug group-hover:text-orange-600 transition">
-              {item.name}
-            </h3>
+        {item.name_alt && (
+          <div className="text-[11px] font-medium text-slate-400 font-sans">
+            {item.name_alt}
           </div>
+        )}
 
-          {item.name_alt && (
-            <div className="text-[11px] font-medium text-slate-400 font-sans">
-              {item.name_alt}
-            </div>
-          )}
+        {item.description && (
+          <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed pt-0.5">
+            {item.description}
+          </p>
+        )}
 
-          {item.description && (
-            <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-              {item.description}
-            </p>
+        {/* Pricing and Action row */}
+        <div className="flex items-center gap-3 pt-2">
+          <span className="text-sm font-black text-slate-900">
+            {currencySymbol} {Number(item.base_price).toLocaleString()}
+          </span>
+
+          {hasModifiers && item.is_available && (
+            <span className="text-[10px] text-orange-600 font-semibold bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200/60">
+              Customizable
+            </span>
           )}
         </div>
       </div>
 
-      {/* Pricing & Add Button Footer */}
-      <div className="p-3.5 pt-0 flex items-center justify-between border-t border-slate-100/80 mt-2">
-        <div>
-          <span className="text-[10px] text-slate-400 block font-medium">Price</span>
-          <span className="text-sm font-extrabold text-slate-900">
-            {currencySymbol} {Number(item.base_price).toLocaleString()}
-          </span>
-        </div>
+      {/* Right Square Thumbnail Column */}
+      <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-100 shadow-2xs">
+        {item.image_url ? (
+          <img
+            src={item.image_url}
+            alt={item.name}
+            loading="lazy"
+            className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${
+              !item.is_available ? 'grayscale' : ''
+            }`}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-100 text-xs">
+            No photo
+          </div>
+        )}
 
-        {item.is_available ? (
+        {/* Crisp Sold Out Badge Overlay */}
+        {!item.is_available ? (
+          <div className="absolute inset-0 bg-slate-900/65 backdrop-blur-[1px] flex items-center justify-center p-1 text-center">
+            <span className="px-2 py-1 rounded-md bg-rose-600 text-white text-[10px] font-black uppercase tracking-wider shadow-md leading-none">
+              Sold Out
+            </span>
+          </div>
+        ) : (
+          /* Tap-friendly floating Add button on thumbnail corner */
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onSelect(item);
             }}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-xs transition active:scale-95"
+            className="absolute bottom-1.5 right-1.5 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-orange-600 hover:bg-orange-500 active:scale-90 text-white flex items-center justify-center shadow-md transition"
+            title={hasModifiers ? 'Customize' : 'Add to cart'}
           >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>{hasModifiers ? 'Customize' : 'Add'}</span>
+            <Plus className="w-4 h-4 stroke-[2.5]" />
           </button>
-        ) : (
-          <span className="text-[11px] font-semibold text-rose-500 bg-rose-50 px-2 py-1 rounded-lg">
-            Unavailable
-          </span>
         )}
       </div>
     </div>
