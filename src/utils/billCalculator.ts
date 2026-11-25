@@ -166,22 +166,26 @@ export function calculateItemizedSplit(
   // Reconcile penny drift: ensure sum of guest taxes precisely equals expectedTotalTax
   const taxDriftCents = Math.round((expectedTotalTax - sumGuestTaxes) * 100);
   if (taxDriftCents !== 0 && shares.length > 0) {
-    // Sort shares descending by subtotal to distribute penny adjustments to highest spenders
-    const sortedIndices = shares
+    // Only distribute penny adjustments to guests who actually claimed items (subtotal > 0),
+    // sorted descending by subtotal
+    const eligibleShares = shares
       .map((s, idx) => ({ idx, subtotal: s.subtotal }))
-      .sort((a, b) => b.subtotal - a.subtotal)
-      .map((s) => s.idx);
+      .filter((s) => s.subtotal > 0)
+      .sort((a, b) => b.subtotal - a.subtotal);
 
-    const step = taxDriftCents > 0 ? 0.01 : -0.01;
-    let remainingCents = Math.abs(taxDriftCents);
-    let i = 0;
+    if (eligibleShares.length > 0) {
+      const step = taxDriftCents > 0 ? 0.01 : -0.01;
+      let remainingCents = Math.abs(taxDriftCents);
+      let i = 0;
 
-    while (remainingCents > 0 && i < sortedIndices.length) {
-      const targetIdx = sortedIndices[i % sortedIndices.length];
-      shares[targetIdx].taxAmount = Math.round((shares[targetIdx].taxAmount + step) * 100) / 100;
-      shares[targetIdx].grandTotal = Math.round((shares[targetIdx].subtotal + shares[targetIdx].taxAmount) * 100) / 100;
-      remainingCents--;
-      i++;
+      while (remainingCents > 0) {
+        const targetIdx = eligibleShares[i % eligibleShares.length].idx;
+        shares[targetIdx].taxAmount = Math.round((shares[targetIdx].taxAmount + step) * 100) / 100;
+        shares[targetIdx].grandTotal = Math.round((shares[targetIdx].subtotal + shares[targetIdx].taxAmount) * 100) / 100;
+        remainingCents--;
+        i++;
+        if (i >= eligibleShares.length * 20) break; // Safety brake
+      }
     }
   }
 
