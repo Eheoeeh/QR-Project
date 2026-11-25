@@ -36,7 +36,9 @@ import {
   SlidersHorizontal,
   Utensils,
   Flame,
-  MapPin
+  MapPin,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 export const CustomerPage: React.FC = () => {
@@ -89,6 +91,13 @@ export const CustomerPage: React.FC = () => {
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const specialsCarouselRef = React.useRef<HTMLDivElement>(null);
+
+  const scrollSpecials = (direction: 'left' | 'right') => {
+    if (!specialsCarouselRef.current) return;
+    const offset = direction === 'left' ? -250 : 250;
+    specialsCarouselRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+  };
 
   // Initialize Anonymous Guest ID, Session & Data
   const initSession = useCallback(async () => {
@@ -962,12 +971,30 @@ export const CustomerPage: React.FC = () => {
                 <span>Chef&apos;s Specials</span>
                 <Flame className="w-4 h-4 text-[#FF5B22] fill-[#FF5B22]" />
               </h2>
-              <span className="text-xs font-semibold text-[#FF5B22]">
-                Swipe &rarr;
-              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => scrollSpecials('left')}
+                  className="w-7 h-7 rounded-full bg-[#18181B] hover:bg-[#242429] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center transition active:scale-90"
+                  aria-label="Scroll specials left"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollSpecials('right')}
+                  className="w-7 h-7 rounded-full bg-[#18181B] hover:bg-[#242429] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center transition active:scale-90"
+                  aria-label="Scroll specials right"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            <div className="flex gap-3.5 overflow-x-auto no-scrollbar pb-1">
+            <div
+              ref={specialsCarouselRef}
+              className="flex gap-3.5 overflow-x-auto no-scrollbar pb-1 scroll-smooth"
+            >
               {featuredItems.map((item) => (
                 <MenuCard
                   key={`featured-${item.id}`}
