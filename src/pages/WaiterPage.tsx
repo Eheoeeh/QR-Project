@@ -85,6 +85,11 @@ export const WaiterPage: React.FC = () => {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'restaurant_settings' },
+        () => debouncedLoadFloor()
+      )
       .subscribe();
 
     return () => {

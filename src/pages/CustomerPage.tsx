@@ -4,7 +4,7 @@ import { supabase } from '../services/supabaseClient';
 import { sessionService } from '../services/sessionService';
 import { orderService } from '../services/orderService';
 import { useSessionStore } from '../store/useSessionStore';
-import { TableSession, MenuItem, Modifier, OrderItem, ServiceRequestType } from '../types';
+import { TableSession, MenuItem, Modifier, OrderItem, ServiceRequestType, RestaurantSettings } from '../types';
 
 // Components
 import BrandedLoader from '../components/customer/BrandedLoader';
@@ -230,6 +230,20 @@ export const CustomerPage: React.FC = () => {
             setMenuItems((prev) => [...prev, newItem]);
           } else if (payload.eventType === 'DELETE' && payload.old) {
             setMenuItems((prev) => prev.filter((item) => item.id !== (payload.old as any).id));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'restaurant_settings',
+          filter: 'id=eq.1'
+        },
+        (payload) => {
+          if (payload.new) {
+            setSettings(payload.new as RestaurantSettings);
           }
         }
       )
