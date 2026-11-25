@@ -3,7 +3,7 @@ import { ChefHat, Printer, Volume2, VolumeX, RefreshCw, Sparkles, Filter } from 
 import { supabase } from '../services/supabaseClient';
 import { kitchenService, KitchenTicket } from '../services/kitchenService';
 import { OrderTicketCard } from '../components/kitchen/OrderTicketCard';
-import { ThermalSlipDrawer } from '../components/kitchen/ThermalSlipDrawer';
+import { ThermalSlipDrawer, ThermalPrinterPanel } from '../components/kitchen/ThermalSlipDrawer';
 import { soundAlert } from '../utils/soundAlert';
 import { PrintJob } from '../types';
 
@@ -141,7 +141,10 @@ export const KitchenPage: React.FC = () => {
 
   const handlePrintKOT = (ticket: KitchenTicket) => {
     setSelectedTicket(ticket);
-    setShowSlipDrawer(true);
+    // On narrow tablets & phones (< xl), slide out the virtual printer drawer
+    if (window.innerWidth < 1280) {
+      setShowSlipDrawer(true);
+    }
   };
 
   const toggleSound = () => {
@@ -165,8 +168,8 @@ export const KitchenPage: React.FC = () => {
   const countReady = tickets.filter((t) => t.status === 'READY').length;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-6 select-none">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-5 lg:p-6 select-none">
+      <div className="max-w-[1800px] mx-auto space-y-5">
         {/* Floating New Order Banner */}
         {newOrderAlert && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-orange-600 text-white font-bold px-4 py-2 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce border border-orange-400">
@@ -176,28 +179,28 @@ export const KitchenPage: React.FC = () => {
         )}
 
         {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <header className="bg-slate-900 rounded-2xl p-4 sm:px-5 border border-slate-800 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
               <ChefHat className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-white tracking-wide">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-xl font-bold text-white tracking-wide">
                   Kitchen Display System (KDS)
                 </h1>
-                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   Live Sync
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Incoming tickets & 80mm Virtual Thermal Printer
+                Incoming kitchen tickets & 80mm Virtual Thermal Printer
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {/* Sound Toggle */}
             <button
               onClick={toggleSound}
@@ -230,131 +233,146 @@ export const KitchenPage: React.FC = () => {
               <RefreshCw className="w-4 h-4" />
             </button>
 
-            {/* 80mm Virtual Thermal Printer Button */}
+            {/* 80mm Virtual Thermal Printer Toggle Button (tucked drawer on phones & narrow tablets) */}
             <button
               onClick={() => {
                 setSelectedTicket(null);
                 setShowSlipDrawer(!showSlipDrawer);
               }}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+              className="xl:hidden inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
             >
               <Printer className="w-4 h-4 text-orange-400" />
-              <span>{showSlipDrawer ? 'Hide Virtual Printer' : '80mm Thermal Printer'}</span>
+              <span>{showSlipDrawer ? 'Hide Thermal Printer' : '80mm Thermal Printer'}</span>
             </button>
           </div>
         </header>
 
-        {/* Filter Navigation Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 bg-slate-800/80 p-1 rounded-xl border border-slate-700/80 text-xs">
-            <button
-              onClick={() => setFilter('ALL')}
-              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-                filter === 'ALL'
-                  ? 'bg-orange-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <span>All Active</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-900/60 text-slate-200">
-                {tickets.length}
-              </span>
-            </button>
+        {/* Main Workspace Split: Left Auto-Fitting Ticket Grid + Right Pinned Thermal Printer (xl+) */}
+        <div className="flex flex-col xl:flex-row gap-5 items-start">
+          {/* Left Column: Filter Controls & Auto-Fitting Ticket Grid */}
+          <div className="flex-1 min-w-0 w-full space-y-4">
+            {/* Filter Navigation Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs overflow-x-auto max-w-full">
+                <button
+                  onClick={() => setFilter('ALL')}
+                  className={`px-3.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 shrink-0 ${
+                    filter === 'ALL'
+                      ? 'bg-orange-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>All Active</span>
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-950/60 text-slate-200">
+                    {tickets.length}
+                  </span>
+                </button>
 
-            <button
-              onClick={() => setFilter('RECEIVED')}
-              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-                filter === 'RECEIVED'
-                  ? 'bg-orange-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <span>New</span>
-              {countReceived > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-orange-500 text-white animate-pulse">
-                  {countReceived}
-                </span>
-              )}
-            </button>
+                <button
+                  onClick={() => setFilter('RECEIVED')}
+                  className={`px-3.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 shrink-0 ${
+                    filter === 'RECEIVED'
+                      ? 'bg-orange-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>New</span>
+                  {countReceived > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-orange-500 text-white animate-pulse">
+                      {countReceived}
+                    </span>
+                  )}
+                </button>
 
-            <button
-              onClick={() => setFilter('PREPARING')}
-              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-                filter === 'PREPARING'
-                  ? 'bg-orange-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <span>Cooking</span>
-              {countPreparing > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-500 text-white">
-                  {countPreparing}
-                </span>
-              )}
-            </button>
+                <button
+                  onClick={() => setFilter('PREPARING')}
+                  className={`px-3.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 shrink-0 ${
+                    filter === 'PREPARING'
+                      ? 'bg-orange-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>Cooking</span>
+                  {countPreparing > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-sky-500 text-white">
+                      {countPreparing}
+                    </span>
+                  )}
+                </button>
 
-            <button
-              onClick={() => setFilter('READY')}
-              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-                filter === 'READY'
-                  ? 'bg-orange-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <span>Ready</span>
-              {countReady > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500 text-white">
-                  {countReady}
-                </span>
-              )}
-            </button>
+                <button
+                  onClick={() => setFilter('READY')}
+                  className={`px-3.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 shrink-0 ${
+                    filter === 'READY'
+                      ? 'bg-orange-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>Ready</span>
+                  {countReady > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500 text-white">
+                      {countReady}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+                <Filter className="w-3.5 h-3.5" />
+                <span>Showing {filteredTickets.length} tickets</span>
+              </div>
+            </div>
+
+            {/* Auto-Fitting Card Grid: 1 col phone, 2 cols tablet, 3+ cols laptop/monitor */}
+            {loading ? (
+              <div className="py-20 text-center text-slate-400">
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-3 text-orange-500" />
+                <p className="text-sm font-semibold">Connecting to kitchen pass stream...</p>
+              </div>
+            ) : filteredTickets.length > 0 ? (
+              <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(min(100%,268px),1fr))]">
+                {filteredTickets.map((ticket) => (
+                  <OrderTicketCard
+                    key={ticket.id}
+                    ticket={ticket}
+                    onStartPreparing={handleStartPreparing}
+                    onMarkReady={handleMarkReady}
+                    onMarkServed={handleMarkServed}
+                    onPrintKOT={handlePrintKOT}
+                  />
+                ))}
+              </div>
+            ) : (
+              /* Empty State */
+              <div className="bg-slate-900/70 rounded-2xl border border-slate-800 p-12 text-center max-w-lg mx-auto">
+                <div className="w-16 h-16 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
+                  <ChefHat className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-bold text-white mb-1">
+                  Pass is Clear — All Orders Served!
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                  There are currently no active tickets in the kitchen. When customers or waiters place an order from any table, it will appear here instantly with live cook timers and an audio chime.
+                </p>
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs border border-slate-700">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Kitchen channel listening in real time</span>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <Filter className="w-3.5 h-3.5" />
-            <span>Showing {filteredTickets.length} tickets</span>
+          {/* Right Column: Pinned 80mm Virtual Thermal Printer on Wide Screens (xl+) */}
+          <div className="hidden xl:block w-[336px] 2xl:w-[372px] shrink-0 sticky top-5">
+            <ThermalPrinterPanel
+              selectedTicket={selectedTicket}
+              activeTickets={tickets}
+              printJobs={printJobs}
+            />
           </div>
         </div>
 
-        {/* Tickets Grid */}
-        {loading ? (
-          <div className="py-20 text-center text-slate-400">
-            <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-3 text-orange-500" />
-            <p className="text-sm font-semibold">Connecting to kitchen pass stream...</p>
-          </div>
-        ) : filteredTickets.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredTickets.map((ticket) => (
-              <OrderTicketCard
-                key={ticket.id}
-                ticket={ticket}
-                onStartPreparing={handleStartPreparing}
-                onMarkReady={handleMarkReady}
-                onMarkServed={handleMarkServed}
-                onPrintKOT={handlePrintKOT}
-              />
-            ))}
-          </div>
-        ) : (
-          /* Empty State */
-          <div className="bg-slate-800/40 rounded-2xl border border-slate-800 p-12 text-center max-w-lg mx-auto">
-            <div className="w-16 h-16 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
-              <ChefHat className="w-8 h-8" />
-            </div>
-            <h3 className="text-base font-bold text-white mb-1">
-              Pass is Clear — All Orders Served!
-            </h3>
-            <p className="text-xs text-slate-400 leading-relaxed mb-4">
-              There are currently no active tickets in the kitchen. When customers or waiters place an order from any table, it will appear here instantly with live cook timers and an audio chime.
-            </p>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs border border-slate-700">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Kitchen channel listening in real time</span>
-            </div>
-          </div>
-        )}
-
-        {/* 80mm Virtual Monospace Thermal Slip Drawer */}
+        {/* 80mm Virtual Monospace Thermal Slip Drawer (Narrow Tablets & Phones) */}
         <ThermalSlipDrawer
           isOpen={showSlipDrawer}
           onClose={() => setShowSlipDrawer(false)}
