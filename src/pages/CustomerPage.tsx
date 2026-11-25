@@ -18,6 +18,7 @@ import OrderStatusTracker from '../components/customer/OrderStatusTracker';
 import ServiceRequestModal from '../components/customer/ServiceRequestModal';
 import OrderSuccessTrackingView from '../components/customer/OrderSuccessTrackingView';
 import DigitalReceiptScreen from '../components/customer/DigitalReceiptScreen';
+import { soundAlert } from '../utils/soundAlert';
 
 // Icons
 import {
@@ -30,7 +31,8 @@ import {
   CheckCircle,
   X,
   ArrowRight,
-  Clock
+  Clock,
+  Navigation
 } from 'lucide-react';
 
 export const CustomerPage: React.FC = () => {
@@ -53,7 +55,8 @@ export const CustomerPage: React.FC = () => {
     setIsSessionExpired,
     setCartItems,
     setOrders,
-    setActiveRequests
+    setActiveRequests,
+    resetSessionState
   } = useSessionStore();
 
   const [isLoading, setIsLoading] = useState(true);
@@ -311,9 +314,23 @@ export const CustomerPage: React.FC = () => {
           table: 'service_requests',
           filter: `session_id=eq.${currentSession.id}`
         },
-        async () => {
+        async (payload) => {
           const requests = await sessionService.getActiveServiceRequests(currentSession.id);
           setActiveRequests(requests);
+
+          // Real-time alert when waiter acknowledges: "On My Way" or "Done"
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            const updated = payload.new as any;
+            if (updated.status === 'ON_THE_WAY') {
+              soundAlert.playChime(false);
+              const label = updated.type === 'WATER' ? 'Water Refill' : 'Waiter';
+              setToastMessage(`${label} is on the way to your table!`);
+              setTimeout(() => setToastMessage(null), 5000);
+            } else if (updated.status === 'DONE') {
+              setToastMessage('Service request completed by waiter.');
+              setTimeout(() => setToastMessage(null), 3000);
+            }
+          }
         }
       )
       .subscribe();
@@ -503,10 +520,31 @@ export const CustomerPage: React.FC = () => {
   };
 
   // Handle starting a fresh session after an expired one
-  const handleStartFresh = () => {
-    sessionService.clearStoredToken(tableNumber);
-    setIsSessionExpired(false);
-    initSession();
+  const handleStartFresh = async () => {
+    try {
+      setIsLoading(true);
+      resetSessionState();
+      setViewMode('menu');
+      const requirePin = settings?.require_seating_pin || false;
+      const freshSession = await sessionService.startFreshTableSession(tableNumber, requirePin);
+      setCurrentSession(freshSession);
+      setIsSessionExpired(false);
+      setOrders([]);
+      setCartItems([]);
+      setActiveRequests([]);
+      const menu = await orderService.getMenuItems();
+      setMenuItems(menu);
+      setToastMessage('Fresh table session started! Welcome.');
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {
+      console.error('Failed to start fresh session:', err);
+      sessionService.clearStoredToken(tableNumber);
+      resetSessionState();
+      setViewMode('menu');
+      await initSession();
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Total items and running subtotal currently in shared cart
@@ -532,7 +570,8 @@ export const CustomerPage: React.FC = () => {
   }, [orders, settings]);
 
   // Check if any service call is currently active for header badge
-  const hasActiveServiceCalls = activeRequests.length > 0;
+  const hasActiveServiceCalls = activeRequests.some((r) => r.status === 'PENDING' || r.status === 'ON_THE_WAY');
+  const onTheWayRequest = activeRequests.find((r) => r.status === 'ON_THE_WAY');
 
   // 1. Loading State
   if (isLoading) {
@@ -646,6 +685,16 @@ export const CustomerPage: React.FC = () => {
           activeRequests={activeRequests}
           onSubmitRequest={handleSubmitServiceRequest}
         />
+
+        {/* Ephemeral Toast Notification */}
+        {toastMessage && (
+          <div className="fixed top-20 inset-x-0 z-50 flex justify-center px-4 pointer-events-none animate-fade-in">
+            <div className="bg-slate-900 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xl border border-slate-800 flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{toastMessage}</span>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -677,14 +726,25 @@ export const CustomerPage: React.FC = () => {
               type="button"
               onClick={() => setIsServiceModalOpen(true)}
               title="Request Waiter or Service"
-              className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-full border transition shadow-2xs active:scale-95 ${
-                hasActiveServiceCalls
+              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border transition shadow-2xs active:scale-95 ${
+                onTheWayRequest
+                  ? 'bg-blue-600 text-white border-blue-500 animate-pulse'
+                  : hasActiveServiceCalls
                   ? 'bg-orange-500 text-white border-orange-500 animate-pulse'
                   : 'bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700'
               }`}
             >
-              <Bell className="w-3.5 h-3.5" />
-              <span>{hasActiveServiceCalls ? 'Pending' : 'Service'}</span>
+              {onTheWayRequest ? (
+                <>
+                  <Navigation className="w-3.5 h-3.5 animate-bounce" />
+                  <span>On The Way</span>
+                </>
+              ) : (
+                <>
+                  <Bell className="w-3.5 h-3.5" />
+                  <span>{hasActiveServiceCalls ? 'Pending' : 'Service'}</span>
+                </>
+              )}
             </button>
 
             {/* Live Bill Pill */}
@@ -701,6 +761,34 @@ export const CustomerPage: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* Real-time "On The Way" Live Notification Banner */}
+        {onTheWayRequest && (
+          <div className="max-w-2xl mx-auto px-4 pb-2">
+            <div className="bg-blue-600 text-white px-3.5 py-2.5 rounded-2xl shadow-md border border-blue-400 flex items-center justify-between gap-3 animate-fade-in">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <Navigation className="w-4 h-4 text-white animate-bounce" />
+                </div>
+                <div className="min-w-0">
+                  <span className="font-extrabold text-xs block truncate">
+                    {onTheWayRequest.type === 'WATER'
+                      ? 'Water Refill is on the way!'
+                      : onTheWayRequest.type === 'PAY_CASH'
+                      ? 'Waiter heading over for cash settlement!'
+                      : 'Waiter is on the way to your table!'}
+                  </span>
+                  <span className="text-[10px] text-blue-100 block truncate">
+                    Staff acknowledged your call and is heading to {table.label}.
+                  </span>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-wider shrink-0">
+                En Route
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Search Bar */}
         <div className="max-w-2xl mx-auto px-4 pb-2.5">

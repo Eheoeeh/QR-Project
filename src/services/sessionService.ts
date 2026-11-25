@@ -150,6 +150,50 @@ export const sessionService = {
   },
 
   /**
+   * Starts a brand new table session unconditionally, resetting tokens and table pointers.
+   */
+  async startFreshTableSession(tableNumber: number, requirePin: boolean = false): Promise<TableSession> {
+    const tokenKey = `qr_session_token_${tableNumber}`;
+    localStorage.removeItem(tokenKey);
+
+    // Look up table by table_number
+    const table = await this.getTableByNumber(tableNumber);
+    if (!table) {
+      throw new Error(`Table ${tableNumber} not found.`);
+    }
+
+    // Generate new random 4-digit PIN
+    const randomPin = Math.floor(1000 + Math.random() * 9000).toString();
+
+    // Create fresh open session
+    const { data: newSession, error: createError } = await supabase
+      .from('table_sessions')
+      .insert({
+        table_id: table.id,
+        seating_pin: randomPin,
+        pin_verified: !requirePin,
+        status: 'OPEN',
+        opened_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (createError || !newSession) {
+      throw createError || new Error('Failed to create new table session');
+    }
+
+    // Link table pointer to this new session
+    await supabase
+      .from('tables')
+      .update({ current_session_id: newSession.id })
+      .eq('id', table.id);
+
+    // Store new session token in browser
+    localStorage.setItem(tokenKey, newSession.session_token);
+    return newSession as TableSession;
+  },
+
+  /**
    * Refreshes the session directly from the database (used on resume/wake-up)
    */
   async refreshSession(sessionId: string): Promise<TableSession | null> {

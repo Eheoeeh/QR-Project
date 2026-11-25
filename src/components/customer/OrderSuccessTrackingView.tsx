@@ -11,7 +11,8 @@ import {
   Bell,
   ChevronDown,
   ChevronUp,
-  Sparkles
+  Sparkles,
+  Navigation
 } from 'lucide-react';
 
 interface OrderSuccessTrackingViewProps {
@@ -114,8 +115,14 @@ export const OrderSuccessTrackingView: React.FC<OrderSuccessTrackingViewProps> =
   const currentStageIndex = getStageIndex(currentOrder.status);
   const currencySymbol = settings?.currency_symbol || 'Rs.';
 
-  const isWaterPending = activeRequests.some((r) => r.type === 'WATER' && r.status !== 'DONE');
-  const isWaiterPending = activeRequests.some((r) => r.type === 'CALL_WAITER' && r.status !== 'DONE');
+  const waterReq = activeRequests.find((r) => r.type === 'WATER' && r.status !== 'DONE');
+  const waiterReq = activeRequests.find((r) => r.type === 'CALL_WAITER' && r.status !== 'DONE');
+  const onTheWayRequest = activeRequests.find((r) => r.status === 'ON_THE_WAY');
+
+  const isWaterOnTheWay = waterReq?.status === 'ON_THE_WAY';
+  const isWaiterOnTheWay = waiterReq?.status === 'ON_THE_WAY';
+  const isWaterPending = !!waterReq;
+  const isWaiterPending = !!waiterReq;
 
   return (
     <div className="min-h-[100dvh] bg-slate-50 text-slate-900 flex flex-col pb-10">
@@ -147,6 +154,32 @@ export const OrderSuccessTrackingView: React.FC<OrderSuccessTrackingViewProps> =
 
       {/* Main Content Area */}
       <main className="max-w-xl mx-auto w-full p-4 space-y-4 flex-1">
+        {/* Real-time "On The Way" Live Notification Banner */}
+        {onTheWayRequest && (
+          <div className="bg-blue-600 text-white p-3.5 rounded-2xl shadow-md border border-blue-400 flex items-center justify-between gap-3 animate-fade-in">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                <Navigation className="w-4 h-4 text-white animate-bounce" />
+              </div>
+              <div className="min-w-0">
+                <span className="font-extrabold text-xs block truncate">
+                  {onTheWayRequest.type === 'WATER'
+                    ? 'Water Refill is on the way!'
+                    : onTheWayRequest.type === 'PAY_CASH'
+                    ? 'Waiter heading over with cash receipt!'
+                    : 'Waiter is on the way to your table!'}
+                </span>
+                <span className="text-[11px] text-blue-100 block truncate">
+                  Staff acknowledged your call and is en route.
+                </span>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-wider shrink-0">
+              En Route
+            </span>
+          </div>
+        )}
+
         {/* Celebration / Live Status Hero Card */}
         <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
@@ -260,24 +293,30 @@ export const OrderSuccessTrackingView: React.FC<OrderSuccessTrackingViewProps> =
             disabled={isWaterPending}
             onClick={() => onRequestService('WATER')}
             className={`p-3.5 rounded-2xl border transition flex items-center gap-3 text-left ${
-              isWaterPending
-                ? 'bg-blue-50 border-blue-200 text-blue-700 opacity-80 cursor-not-allowed'
+              isWaterOnTheWay
+                ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/20'
+                : isWaterPending
+                ? 'bg-blue-50 border-blue-200 text-blue-700 opacity-90 cursor-not-allowed'
                 : 'bg-white hover:bg-slate-50 border-slate-200/90 text-slate-800 shadow-2xs active:scale-98'
             }`}
           >
             <div
               className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                isWaterPending ? 'bg-blue-200 text-blue-700' : 'bg-blue-50 text-blue-600'
+                isWaterOnTheWay
+                  ? 'bg-white/20 text-white'
+                  : isWaterPending
+                  ? 'bg-blue-200 text-blue-700'
+                  : 'bg-blue-50 text-blue-600'
               }`}
             >
               <Droplets className="w-5 h-5" />
             </div>
             <div className="min-w-0">
               <span className="text-xs font-black block truncate">
-                {isWaterPending ? 'Water on Way' : 'Need Water'}
+                {isWaterOnTheWay ? 'Water on the Way!' : isWaterPending ? 'Water Requested' : 'Need Water'}
               </span>
-              <span className="text-[10px] text-slate-400 block truncate">
-                {isWaterPending ? 'Waiter notified' : 'Bring jug to table'}
+              <span className={`text-[10px] block truncate ${isWaterOnTheWay ? 'text-blue-100 font-medium' : 'text-slate-400'}`}>
+                {isWaterOnTheWay ? 'Staff heading to table' : isWaterPending ? 'Waiting for staff' : 'Bring jug to table'}
               </span>
             </div>
           </button>
@@ -287,24 +326,30 @@ export const OrderSuccessTrackingView: React.FC<OrderSuccessTrackingViewProps> =
             disabled={isWaiterPending}
             onClick={() => onRequestService('CALL_WAITER')}
             className={`p-3.5 rounded-2xl border transition flex items-center gap-3 text-left ${
-              isWaiterPending
-                ? 'bg-amber-50 border-amber-200 text-amber-700 opacity-80 cursor-not-allowed'
+              isWaiterOnTheWay
+                ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/20'
+                : isWaiterPending
+                ? 'bg-amber-50 border-amber-200 text-amber-700 opacity-90 cursor-not-allowed'
                 : 'bg-white hover:bg-slate-50 border-slate-200/90 text-slate-800 shadow-2xs active:scale-98'
             }`}
           >
             <div
               className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                isWaiterPending ? 'bg-amber-200 text-amber-700' : 'bg-amber-50 text-amber-600'
+                isWaiterOnTheWay
+                  ? 'bg-white/20 text-white'
+                  : isWaiterPending
+                  ? 'bg-amber-200 text-amber-700'
+                  : 'bg-amber-50 text-amber-600'
               }`}
             >
               <Bell className="w-5 h-5" />
             </div>
             <div className="min-w-0">
               <span className="text-xs font-black block truncate">
-                {isWaiterPending ? 'Waiter Called' : 'Call Waiter'}
+                {isWaiterOnTheWay ? 'Waiter on the Way!' : isWaiterPending ? 'Waiter Called' : 'Call Waiter'}
               </span>
-              <span className="text-[10px] text-slate-400 block truncate">
-                {isWaiterPending ? 'Staff notified' : 'Assistance at table'}
+              <span className={`text-[10px] block truncate ${isWaiterOnTheWay ? 'text-blue-100 font-medium' : 'text-slate-400'}`}>
+                {isWaiterOnTheWay ? 'Staff heading to table' : isWaiterPending ? 'Waiting for staff' : 'Assistance at table'}
               </span>
             </div>
           </button>
