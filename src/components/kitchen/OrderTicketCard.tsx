@@ -61,40 +61,42 @@ export const OrderTicketCard: React.FC<OrderTicketCardProps> = ({
     timerClass = 'text-emerald-300';
   }
 
+  const zoneName = ticket.table_label?.match(/\(([^)]+)\)/)?.[1] || ticket.table_label;
+
   return (
     <div className={`bg-slate-900 rounded-2xl border-2 ${borderClass} overflow-hidden shadow-xl flex flex-col justify-between transition-colors duration-150`}>
       {/* Ticket Header */}
       <div className="flex-1 flex flex-col">
-        <div className="bg-slate-800/95 px-4 py-3 flex items-center justify-between gap-2 border-b border-slate-700/80">
+        <div className="bg-slate-800/95 px-3.5 py-3 flex items-center justify-between gap-2 border-b border-slate-700/80">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-black text-lg sm:text-xl text-amber-400 tracking-tight">
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
+              <span className="font-black text-base sm:text-lg text-amber-400 tracking-tight">
                 #{ticket.order_number}
               </span>
-              <span className="text-slate-500 text-sm">•</span>
-              <span className="font-black text-lg sm:text-xl text-white tracking-tight">
+              <span className="text-slate-500 text-xs">•</span>
+              <span className="font-black text-base sm:text-lg text-white tracking-tight">
                 Table {ticket.table_number}
               </span>
             </div>
-            {ticket.table_label && (
+            {zoneName && (
               <p className="text-xs font-semibold text-slate-300 truncate mt-0.5">
-                {ticket.table_label}
+                {zoneName}
               </p>
             )}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <div
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/80 border border-slate-700 text-sm sm:text-base font-extrabold tabular-nums ${timerClass}`}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-700 text-xs sm:text-sm font-extrabold tabular-nums whitespace-nowrap ${timerClass}`}
               title="Elapsed cook time"
             >
-              <Clock className="w-4 h-4 shrink-0" />
+              <Clock className="w-3.5 h-3.5 shrink-0" />
               <span>{timeFormatted}</span>
             </div>
             <button
               onClick={() => onPrintKOT(ticket)}
               title="Preview & Print 80mm KOT Slip"
-              className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition border border-slate-600"
+              className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition border border-slate-600"
             >
               <Printer className="w-4 h-4" />
             </button>
@@ -167,30 +169,30 @@ export const OrderTicketCard: React.FC<OrderTicketCardProps> = ({
       </div>
 
       {/* Ticket Action Footer with Fixed Minimum Height */}
-      <div className="bg-slate-800/60 px-4 py-3 border-t border-slate-800 min-h-[68px] flex items-center">
+      <div className="bg-slate-800/60 px-3.5 py-3 border-t border-slate-800 min-h-[64px] flex items-center">
         {ticket.status === 'RECEIVED' && (
-          <div className="flex items-center gap-2.5 w-full">
+          <div className="flex items-center gap-2 w-full">
             <button
               disabled={isProcessing}
               onClick={(e) => handleAction(e, () => onStartPreparing(ticket.id))}
-              className="flex-1 py-3 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white text-sm font-extrabold transition flex items-center justify-center gap-1.5 shadow"
+              className="flex-1 py-2.5 px-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white text-xs sm:text-[13px] font-extrabold transition flex items-center justify-center gap-1.5 shadow whitespace-nowrap"
             >
               {isProcessing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
               ) : (
-                <Flame className="w-4 h-4" />
+                <Flame className="w-3.5 h-3.5 shrink-0" />
               )}
               <span>Start Preparing</span>
             </button>
             <button
               disabled={isProcessing}
               onClick={(e) => handleAction(e, () => onMarkReady(ticket.id))}
-              className="flex-1 py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-sm font-extrabold transition flex items-center justify-center gap-1.5 shadow"
+              className="flex-1 py-2.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs sm:text-[13px] font-extrabold transition flex items-center justify-center gap-1.5 shadow whitespace-nowrap"
             >
               {isProcessing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
               ) : (
-                <CheckCircle2 className="w-4 h-4" />
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
               )}
               <span>Mark Ready</span>
             </button>
@@ -201,12 +203,12 @@ export const OrderTicketCard: React.FC<OrderTicketCardProps> = ({
           <button
             disabled={isProcessing}
             onClick={(e) => handleAction(e, () => onMarkReady(ticket.id))}
-            className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-sm font-extrabold transition flex items-center justify-center gap-2 shadow-md shadow-emerald-950/40"
+            className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 shadow-md shadow-emerald-950/40 whitespace-nowrap"
           >
             {isProcessing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
             ) : (
-              <CheckCircle2 className="w-4 h-4" />
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
             )}
             <span>Mark Ready for Pickup</span>
           </button>
@@ -214,19 +216,19 @@ export const OrderTicketCard: React.FC<OrderTicketCardProps> = ({
 
         {ticket.status === 'READY' && (
           <div className="flex items-center justify-between gap-2 w-full">
-            <div className="text-sm text-emerald-300 font-bold flex items-center gap-1.5">
+            <div className="text-xs sm:text-sm text-emerald-300 font-bold flex items-center gap-1.5 whitespace-nowrap">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>Ready for server</span>
             </div>
             <button
               disabled={isProcessing}
               onClick={(e) => handleAction(e, () => onMarkServed(ticket.id))}
-              className="py-2.5 px-3.5 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-white text-sm font-bold transition flex items-center gap-1.5 border border-slate-600 shrink-0"
+              className="py-2 px-3 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-white text-xs sm:text-sm font-bold transition flex items-center gap-1.5 border border-slate-600 shrink-0 whitespace-nowrap"
             >
               {isProcessing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
               ) : (
-                <Check className="w-4 h-4" />
+                <Check className="w-3.5 h-3.5 shrink-0" />
               )}
               <span>Clear Pass</span>
             </button>

@@ -343,7 +343,7 @@ export const KitchenPage: React.FC = () => {
                 <p className="text-sm font-semibold">Connecting to kitchen pass stream...</p>
               </div>
             ) : filteredTickets.length > 0 ? (
-              <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(min(100%,268px),1fr))]">
+              <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(min(100%,284px),1fr))]">
                 {filteredTickets.map((ticket) => (
                   <OrderTicketCard
                     key={ticket.id}
@@ -376,7 +376,7 @@ export const KitchenPage: React.FC = () => {
           </div>
 
           {/* Right Column: Pinned 80mm Virtual Thermal Printer on Wide Screens (xl+) */}
-          <div className="hidden xl:block w-[336px] 2xl:w-[372px] shrink-0 sticky top-5">
+          <div className="hidden xl:block w-[320px] 2xl:w-[360px] shrink-0 sticky top-5">
             <ThermalPrinterPanel
               selectedTicket={selectedTicket}
               activeTickets={tickets}

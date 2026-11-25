@@ -137,8 +137,8 @@ const ThermalPrinterBody: React.FC<
                 ----------------------------------------
               </div>
               <div className="flex justify-between text-[10px] font-bold text-gray-800">
-                <span>QTY ITEM DESCRIPTION</span>
-                <span>STATUS</span>
+                <span>QTY  ITEM DESCRIPTION</span>
+                <span>{currentTicket.status}</span>
               </div>
               <div className="text-[10px] text-gray-500 mb-1">
                 ----------------------------------------
