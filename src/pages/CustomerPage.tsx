@@ -18,12 +18,12 @@ import OrderStatusTracker from '../components/customer/OrderStatusTracker';
 import ServiceRequestModal from '../components/customer/ServiceRequestModal';
 import OrderSuccessTrackingView from '../components/customer/OrderSuccessTrackingView';
 import DigitalReceiptScreen from '../components/customer/DigitalReceiptScreen';
+import MenuFilterModal, { MenuFilterState } from '../components/customer/MenuFilterModal';
 import { soundAlert } from '../utils/soundAlert';
 
 // Icons
 import {
   Bell,
-  ShoppingBag,
   Receipt,
   AlertTriangle,
   ArrowLeft,
@@ -32,7 +32,11 @@ import {
   X,
   ArrowRight,
   Clock,
-  Navigation
+  Navigation,
+  SlidersHorizontal,
+  Utensils,
+  Flame,
+  MapPin
 } from 'lucide-react';
 
 export const CustomerPage: React.FC = () => {
@@ -73,7 +77,15 @@ export const CustomerPage: React.FC = () => {
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'menu' | 'tracking'>('menu');
+
+  const [menuFilters, setMenuFilters] = useState<MenuFilterState>({
+    maxPrice: 5000,
+    spiceFilter: 'ALL',
+    customizableOnly: false,
+    availableOnly: false
+  });
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -412,6 +424,17 @@ export const CustomerPage: React.FC = () => {
     return ['All', ...Array.from(set)];
   }, [menuItems]);
 
+  const maxCatalogPrice = useMemo(() => {
+    const maxVal = menuItems.reduce((m, item) => Math.max(m, Number(item.base_price) || 0), 2000);
+    return Math.ceil(maxVal / 100) * 100;
+  }, [menuItems]);
+
+  const hasActiveFilters =
+    menuFilters.spiceFilter !== 'ALL' ||
+    menuFilters.customizableOnly ||
+    menuFilters.availableOnly ||
+    menuFilters.maxPrice < maxCatalogPrice;
+
   // Filtered dishes
   const filteredItems = useMemo(() => {
     return menuItems.filter((item) => {
@@ -422,9 +445,43 @@ export const CustomerPage: React.FC = () => {
         item.name.toLowerCase().includes(q) ||
         (item.name_alt && item.name_alt.toLowerCase().includes(q)) ||
         (item.description && item.description.toLowerCase().includes(q));
-      return matchesCategory && matchesSearch;
+      const matchesPrice = Number(item.base_price) <= menuFilters.maxPrice;
+      const matchesSpice =
+        menuFilters.spiceFilter === 'ALL' ||
+        (menuFilters.spiceFilter === 'MILD' && item.spice_level === 1) ||
+        (menuFilters.spiceFilter === 'MEDIUM' && item.spice_level === 2) ||
+        (menuFilters.spiceFilter === 'HOT' && item.spice_level >= 3);
+      const matchesCustom =
+        !menuFilters.customizableOnly || (item.modifiers && item.modifiers.length > 0);
+      const matchesAvail = !menuFilters.availableOnly || item.is_available;
+
+      return (
+        matchesCategory &&
+        matchesSearch &&
+        matchesPrice &&
+        matchesSpice &&
+        matchesCustom &&
+        matchesAvail
+      );
     });
-  }, [menuItems, selectedCategory, searchQuery]);
+  }, [menuItems, selectedCategory, searchQuery, menuFilters]);
+
+  // Featured "Chef's Specials" carousel items
+  const featuredItems = useMemo(() => {
+    return menuItems.filter((item) => item.image_url).slice(0, 5);
+  }, [menuItems]);
+
+  const getCategoryIcon = (cat: string) => {
+    const lower = cat.toLowerCase();
+    if (lower === 'all') return '🍽️';
+    if (lower.includes('starter') || lower.includes('appetizer')) return '🍤';
+    if (lower.includes('burger')) return '🍔';
+    if (lower.includes('bbq') || lower.includes('grill')) return '🔥';
+    if (lower.includes('pizza')) return '🍕';
+    if (lower.includes('drink') || lower.includes('beverage')) return '🥤';
+    if (lower.includes('dessert') || lower.includes('sweet')) return '🍫';
+    return '🍴';
+  };
 
   // Handle dish card selection
   const handleSelectDish = (item: MenuItem) => {
@@ -670,7 +727,7 @@ export const CustomerPage: React.FC = () => {
   // 5. Dedicated Order Success & Kitchen Tracking Screen
   if (viewMode === 'tracking' && orders.length > 0) {
     return (
-      <div className="min-h-[100dvh] bg-slate-50 text-slate-900">
+      <div className="min-h-[100dvh] bg-[#0B0B0D] text-white">
         <OrderSuccessTrackingView
           orders={orders}
           tableLabel={table.label}
@@ -721,142 +778,145 @@ export const CustomerPage: React.FC = () => {
     );
   }
 
-  // 6. Active Dining Menu & Ordering Experience
+  // 6. Active Dining Menu & Ordering Experience (Dark Onyx + Flame Orange Hero Style)
   return (
-    <div className="min-h-[100dvh] bg-slate-50 text-slate-900 pb-36">
-      {/* Sticky Top Header: Restaurant Name & Table on Left; Service Bell & Live Bill pill on Right */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/90 shadow-2xs">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
-          {/* Left: Restaurant Name + Table Number Badge */}
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="min-w-0">
-              <span className="text-[10px] font-extrabold text-orange-600 uppercase tracking-wider block truncate">
-                {settings?.name || 'Spice & Sizzle Bistro'}
-              </span>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <h1 className="text-sm sm:text-base font-black text-slate-900 leading-tight truncate">
-                  {table.label}
-                </h1>
+    <div className="min-h-[100dvh] bg-[#0B0B0D] text-white pb-40">
+      {/* Top Curved Vibrant Orange Hero Header (Image 1 Style) */}
+      <header className="bg-gradient-to-br from-[#FF5B22] to-[#FF7235] rounded-b-[28px] shadow-2xl">
+        <div className="max-w-2xl mx-auto px-4 pt-4 pb-5 space-y-4">
+          {/* Top Row: Table Location + Venue Name on Left, Bell Circle & Bill Pill on Right */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-full bg-black/25 border border-white/25 flex items-center justify-center shrink-0">
+                <Utensils className="w-4 h-4 text-white" />
               </div>
+              <div className="min-w-0">
+                <span className="text-[10px] font-black uppercase tracking-widest text-white/85 block truncate">
+                  {settings?.name || 'Spice & Sizzle Bistro'}
+                </span>
+                <div className="flex items-center gap-1 text-xs font-extrabold text-white truncate">
+                  <MapPin className="w-3 h-3 shrink-0 text-white/90" />
+                  <span className="truncate">{table.label}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Circular Service Bell Button */}
+              <button
+                type="button"
+                onClick={() => setIsServiceModalOpen(true)}
+                title="Request Waiter or Service"
+                className={`relative w-9 h-9 rounded-full border flex items-center justify-center transition active:scale-90 ${
+                  onTheWayRequest
+                    ? 'bg-sky-600 border-white text-white animate-pulse'
+                    : hasActiveServiceCalls
+                    ? 'bg-black/45 border-white text-amber-300 animate-pulse'
+                    : 'bg-black/20 hover:bg-black/35 border-white/30 text-white'
+                }`}
+              >
+                {onTheWayRequest ? (
+                  <Navigation className="w-4 h-4 animate-bounce" />
+                ) : (
+                  <Bell className="w-4 h-4" />
+                )}
+                {hasActiveServiceCalls && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-300 border-2 border-[#FF5B22]" />
+                )}
+              </button>
+
+              {/* Live Bill Pill */}
+              <button
+                type="button"
+                onClick={() => setIsBillModalOpen(true)}
+                title="Running Live Bill"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/30 hover:bg-black/45 text-white text-xs font-black border border-white/25 backdrop-blur transition active:scale-95"
+              >
+                <Receipt className="w-3.5 h-3.5 text-amber-300" />
+                <span>
+                  {settings?.currency_symbol || 'Rs.'} {runningTotal.toLocaleString()}
+                </span>
+              </button>
             </div>
           </div>
 
-          {/* Right: Service Bell Button & Live Bill Pill */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsServiceModalOpen(true)}
-              title="Request Waiter or Service"
-              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border transition shadow-2xs active:scale-95 ${
-                onTheWayRequest
-                  ? 'bg-blue-600 text-white border-blue-500 animate-pulse'
-                  : hasActiveServiceCalls
-                  ? 'bg-orange-500 text-white border-orange-500 animate-pulse'
-                  : 'bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700'
-              }`}
-            >
-              {onTheWayRequest ? (
-                <>
-                  <Navigation className="w-3.5 h-3.5 animate-bounce" />
-                  <span>On The Way</span>
-                </>
-              ) : (
-                <>
-                  <Bell className="w-3.5 h-3.5" />
-                  <span>{hasActiveServiceCalls ? 'Pending' : 'Service'}</span>
-                </>
-              )}
-            </button>
-
-            {/* Live Bill Pill */}
-            <button
-              type="button"
-              onClick={() => setIsBillModalOpen(true)}
-              title="Running Live Bill"
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-black shadow-2xs border border-slate-800 transition active:scale-95 cursor-pointer"
-            >
-              <Receipt className="w-3.5 h-3.5 text-orange-400" />
-              <span>
-                {settings?.currency_symbol || 'Rs.'} {runningTotal.toLocaleString()}
-              </span>
-            </button>
+          {/* Bold Hero Greeting */}
+          <div>
+            <h1 className="text-2xl sm:text-[26px] font-black text-white leading-tight tracking-tight">
+              What would you prefer to eat today?
+            </h1>
           </div>
-        </div>
 
-        {/* Real-time "On The Way" Live Notification Banner */}
-        {onTheWayRequest && (
-          <div className="max-w-2xl mx-auto px-4 pb-2">
-            <div className="bg-blue-600 text-white px-3.5 py-2.5 rounded-2xl shadow-md border border-blue-400 flex items-center justify-between gap-3 animate-fade-in">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-                  <Navigation className="w-4 h-4 text-white animate-bounce" />
-                </div>
-                <div className="min-w-0">
-                  <span className="font-extrabold text-xs block truncate">
-                    {onTheWayRequest.type === 'WATER'
-                      ? 'Water Refill is on the way!'
-                      : onTheWayRequest.type === 'PAY_CASH'
-                      ? 'Waiter heading over for cash settlement!'
-                      : 'Waiter is on the way to your table!'}
-                  </span>
-                  <span className="text-[10px] text-blue-100 block truncate">
-                    Staff acknowledged your call and is heading to {table.label}.
-                  </span>
-                </div>
-              </div>
-              <span className="px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-wider shrink-0">
-                En Route
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Search Bar */}
-        <div className="max-w-2xl mx-auto px-4 pb-2.5">
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          {/* Dark Pill Search Bar + Filter Sliders inside Hero (Image 1 & 5 Style) */}
+          <div className="flex items-center bg-[#121215] rounded-full border border-white/10 px-3.5 py-1.5 shadow-lg focus-within:border-white/30 transition">
+            <Search className="w-4 h-4 text-zinc-400 shrink-0 mr-2.5" />
             <input
               type="text"
-              placeholder="Search dishes, burgers, drinks..."
+              placeholder="Search menu, burgers, grill..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-100 border border-slate-200/80 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-orange-500 transition"
+              className="w-full py-1.5 bg-transparent text-xs sm:text-sm text-white placeholder:text-zinc-400 focus:outline-none"
             />
             {searchQuery && (
               <button
+                type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="p-1 text-zinc-400 hover:text-white mr-1"
+                aria-label="Clear search"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
+            <div className="h-4 w-px bg-zinc-700 mx-1.5" />
+            <button
+              type="button"
+              onClick={() => setIsFilterModalOpen(true)}
+              className={`relative p-1.5 rounded-full transition ${
+                hasActiveFilters
+                  ? 'text-[#FF5B22] bg-[#FF5B22]/15'
+                  : 'text-zinc-300 hover:text-white'
+              }`}
+              title="Filter menu"
+              aria-label="Filter menu"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              {hasActiveFilters && (
+                <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-[#FF5B22]" />
+              )}
+            </button>
           </div>
-        </div>
-
-        {/* Pinned Single Horizontal Row of Category Pills */}
-        <div className="max-w-2xl mx-auto overflow-x-auto no-scrollbar px-4 pb-2.5 flex items-center gap-2">
-          {categories.map((cat) => {
-            const isActive = selectedCategory === cat;
-            return (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setSelectedCategory(cat)}
-                className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold transition select-none shrink-0 ${
-                  isActive
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/60'
-                }`}
-              >
-                {cat}
-              </button>
-            );
-          })}
         </div>
       </header>
 
-      {/* Scene 4: Always-Reachable Live Order Status Strip (Shows when orders are placed) */}
+      {/* Real-time "On The Way" Live Notification Banner */}
+      {onTheWayRequest && (
+        <div className="max-w-2xl mx-auto px-4 pt-3">
+          <div className="bg-sky-600 text-white px-3.5 py-2.5 rounded-2xl shadow-lg border border-sky-400/50 flex items-center justify-between gap-3 animate-fade-in">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                <Navigation className="w-4 h-4 text-white animate-bounce" />
+              </div>
+              <div className="min-w-0">
+                <span className="font-extrabold text-xs block truncate">
+                  {onTheWayRequest.type === 'WATER'
+                    ? 'Water Refill is on the way!'
+                    : onTheWayRequest.type === 'PAY_CASH'
+                    ? 'Waiter heading over for cash settlement!'
+                    : 'Waiter is on the way to your table!'}
+                </span>
+                <span className="text-[10px] text-sky-100 block truncate">
+                  Staff acknowledged your call and is heading to {table.label}.
+                </span>
+              </div>
+            </div>
+            <span className="px-2.5 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-wider shrink-0">
+              En Route
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Scene 4: Always-Reachable Live Order Status Strip */}
       <OrderStatusTracker
         orders={orders}
         currencySymbol={settings?.currency_symbol || 'Rs.'}
@@ -864,62 +924,138 @@ export const CustomerPage: React.FC = () => {
         onOpenTracking={() => setViewMode('tracking')}
       />
 
-      {/* Main Dishes Catalog Feed */}
-      <main className="max-w-2xl mx-auto p-4 space-y-4">
-        {/* Category Header */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-black uppercase tracking-wider text-slate-400">
-            {selectedCategory === 'All' ? 'All Dishes' : selectedCategory} ({filteredItems.length})
-          </h2>
-        </div>
+      {/* Main Content Feed */}
+      <main className="max-w-2xl mx-auto px-4 pt-4 space-y-6">
+        {/* Categories Horizontal Pill Strip (Image 1 Style) */}
+        <section className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-white tracking-tight">Categories</h2>
+          </div>
 
-        {/* Dish Cards Grid */}
-        {filteredItems.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-2 shadow-2xs">
-            <p className="text-sm font-bold text-slate-700">No dishes found</p>
-            <p className="text-xs text-slate-400">Try a different search term or category.</p>
+          <div className="overflow-x-auto no-scrollbar flex items-center gap-2 pb-0.5">
+            {categories.map((cat) => {
+              const isActive = selectedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold transition flex items-center gap-1.5 select-none shrink-0 border ${
+                    isActive
+                      ? 'bg-[#FF5B22] border-[#FF5B22] text-white shadow-md shadow-orange-950/40'
+                      : 'bg-[#18181B] hover:bg-[#222227] text-zinc-300 border-white/[0.08]'
+                  }`}
+                >
+                  <span>{getCategoryIcon(cat)}</span>
+                  <span>{cat}</span>
+                </button>
+              );
+            })}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {filteredItems.map((item) => (
-              <MenuCard
-                key={item.id}
-                item={item}
-                currencySymbol={settings?.currency_symbol || 'Rs.'}
-                onSelect={handleSelectDish}
-              />
-            ))}
-          </div>
+        </section>
+
+        {/* Chef's Specials Horizontal Carousel (Image 1 "Super Deals 🔥" Style) */}
+        {selectedCategory === 'All' && !searchQuery && !hasActiveFilters && featuredItems.length > 0 && (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-white flex items-center gap-1.5">
+                <span>Chef&apos;s Specials</span>
+                <Flame className="w-4 h-4 text-[#FF5B22] fill-[#FF5B22]" />
+              </h2>
+              <span className="text-xs font-semibold text-[#FF5B22]">
+                Swipe &rarr;
+              </span>
+            </div>
+
+            <div className="flex gap-3.5 overflow-x-auto no-scrollbar pb-1">
+              {featuredItems.map((item) => (
+                <MenuCard
+                  key={`featured-${item.id}`}
+                  item={item}
+                  variant="featured"
+                  currencySymbol={settings?.currency_symbol || 'Rs.'}
+                  onSelect={handleSelectDish}
+                />
+              ))}
+            </div>
+          </section>
         )}
+
+        {/* All Dishes / Filtered Menu List (Image 5 Horizontal Dark Cards Style) */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-white flex items-center gap-1.5">
+              <span>{selectedCategory === 'All' ? 'Popular Dishes' : selectedCategory}</span>
+              <span className="text-xs font-semibold text-zinc-400">({filteredItems.length})</span>
+            </h2>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() =>
+                  setMenuFilters({
+                    maxPrice: maxCatalogPrice,
+                    spiceFilter: 'ALL',
+                    customizableOnly: false,
+                    availableOnly: false
+                  })
+                }
+                className="text-xs font-bold text-[#FF5B22] hover:underline"
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
+
+          {filteredItems.length === 0 ? (
+            <div className="bg-[#18181B] rounded-2xl p-8 border border-white/[0.08] text-center space-y-2">
+              <p className="text-sm font-bold text-white">No dishes match your search</p>
+              <p className="text-xs text-zinc-400">
+                Try clearing filters or selecting a different category.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {filteredItems.map((item) => (
+                <MenuCard
+                  key={item.id}
+                  item={item}
+                  variant="list"
+                  currencySymbol={settings?.currency_symbol || 'Rs.'}
+                  onSelect={handleSelectDish}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       </main>
 
       {/* Ephemeral Toast Notification */}
       {toastMessage && (
         <div className="fixed top-20 inset-x-0 z-50 flex justify-center px-4 pointer-events-none animate-fade-in">
-          <div className="bg-slate-900 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xl border border-slate-800 flex items-center gap-2">
+          <div className="bg-[#18181B] text-white px-4 py-2.5 rounded-full text-xs font-semibold shadow-2xl border border-white/15 flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>{toastMessage}</span>
           </div>
         </div>
       )}
 
-      {/* Scene 3 Floating Bottom Cart Bar (Appears when cart has items) */}
+      {/* Scene 3 Floating Bottom Shared Cart Bar */}
       {cartItemCount > 0 && (
-        <div className="fixed bottom-16 inset-x-0 z-40 px-4 pointer-events-none animate-slide-up">
+        <div className="fixed bottom-[68px] inset-x-0 z-40 px-4 pointer-events-none animate-slide-up">
           <div className="max-w-2xl mx-auto pointer-events-auto">
             <div
               onClick={() => setIsCartDrawerOpen(true)}
-              className="bg-slate-900 text-white rounded-2xl p-3.5 shadow-2xl border border-slate-800 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-850 active:scale-[0.99] transition"
+              className="bg-[#18181B]/95 backdrop-blur-md text-white rounded-2xl p-3 shadow-2xl border border-[#FF5B22]/40 flex items-center justify-between gap-3 cursor-pointer hover:border-[#FF5B22] active:scale-[0.99] transition"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-sm">
+                <div className="w-10 h-10 rounded-xl bg-[#FF5B22] text-white flex items-center justify-center font-black text-sm shrink-0 shadow-md">
                   {cartItemCount}
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-orange-400 block">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#FF5B22] block">
                     Shared Table Cart
                   </span>
-                  <div className="text-sm font-black text-white truncate">
+                  <div className="text-sm font-black text-white truncate tabular-nums">
                     {settings?.currency_symbol || 'Rs.'} {cartSubtotal.toLocaleString()}
                   </div>
                 </div>
@@ -927,7 +1063,7 @@ export const CustomerPage: React.FC = () => {
 
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-extrabold shadow transition shrink-0"
+                className="inline-flex items-center gap-1.5 py-2 px-4 rounded-full bg-[#FF5B22] hover:bg-[#ff6d3a] text-white text-xs font-extrabold shadow transition shrink-0"
               >
                 <span>Review Order</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -937,44 +1073,90 @@ export const CustomerPage: React.FC = () => {
         </div>
       )}
 
-      {/* Bottom Floating Nav Bar */}
-      <nav className="fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 px-4 py-2.5 shadow-lg">
-        <div className="max-w-2xl mx-auto flex items-center justify-between gap-2.5">
-          {/* View Bill Button */}
+      {/* Dark Bottom Dock Navigation (Image 1 Style) */}
+      <nav className="fixed bottom-0 inset-x-0 z-30 bg-[#121215]/95 backdrop-blur-md border-t border-white/[0.08] px-3 py-2 shadow-2xl">
+        <div className="max-w-2xl mx-auto grid grid-cols-4 gap-1">
+          <button
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="flex flex-col items-center justify-center py-1 rounded-xl text-[#FF5B22] transition"
+          >
+            <Utensils className="w-5 h-5" />
+            <span className="text-[10px] font-bold mt-0.5">Menu</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (orders.length > 0) {
+                setViewMode('tracking');
+              } else {
+                setIsCartDrawerOpen(true);
+              }
+            }}
+            className="relative flex flex-col items-center justify-center py-1 rounded-xl text-zinc-400 hover:text-white transition"
+          >
+            <Clock className="w-5 h-5" />
+            <span className="text-[10px] font-semibold mt-0.5">
+              {orders.length > 0 ? 'My Order' : `Cart (${cartItemCount})`}
+            </span>
+            {orders.length > 0 && (
+              <span className="absolute top-1 right-6 w-2 h-2 rounded-full bg-[#FF5B22] animate-pulse" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsServiceModalOpen(true)}
+            className={`relative flex flex-col items-center justify-center py-1 rounded-xl transition ${
+              onTheWayRequest
+                ? 'text-sky-400'
+                : hasActiveServiceCalls
+                ? 'text-amber-400'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <Bell className="w-5 h-5" />
+            <span className="text-[10px] font-semibold mt-0.5">
+              {onTheWayRequest ? 'En Route' : 'Waiter'}
+            </span>
+            {hasActiveServiceCalls && (
+              <span className="absolute top-1 right-6 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+            )}
+          </button>
+
           <button
             type="button"
             onClick={() => setIsBillModalOpen(true)}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition active:scale-[0.99]"
+            className="flex flex-col items-center justify-center py-1 rounded-xl text-zinc-400 hover:text-white transition"
           >
-            <Receipt className="w-4 h-4 text-slate-600" />
-            <span>View Bill</span>
-          </button>
-
-          {/* Track Order Button (Visible when orders exist) */}
-          {orders.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setViewMode('tracking')}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 text-xs font-bold transition active:scale-[0.99]"
-            >
-              <Clock className="w-4 h-4 text-orange-600 animate-pulse" />
-              <span>Track Order</span>
-            </button>
-          )}
-
-          {/* Cart Button */}
-          <button
-            type="button"
-            onClick={() => setIsCartDrawerOpen(true)}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-md transition active:scale-[0.99]"
-          >
-            <ShoppingBag className="w-4 h-4" />
-            <span>Cart ({cartItemCount})</span>
+            <Receipt className="w-5 h-5" />
+            <span className="text-[10px] font-semibold mt-0.5">
+              Bill
+            </span>
           </button>
         </div>
       </nav>
 
-      {/* Modifier Bottom Sheet Modal */}
+      {/* Filter Sheet Modal (Image 4 Style) */}
+      <MenuFilterModal
+        isOpen={isFilterModalOpen}
+        onClose={() => setIsFilterModalOpen(false)}
+        filters={menuFilters}
+        maxCatalogPrice={maxCatalogPrice}
+        currencySymbol={settings?.currency_symbol || 'Rs.'}
+        onApply={setMenuFilters}
+        onClear={() =>
+          setMenuFilters({
+            maxPrice: maxCatalogPrice,
+            spiceFilter: 'ALL',
+            customizableOnly: false,
+            availableOnly: false
+          })
+        }
+      />
+
+      {/* Modifier Bottom Sheet Modal (Image 2 Style) */}
       <ModifierModal
         item={selectedItemForModal}
         currencySymbol={settings?.currency_symbol || 'Rs.'}

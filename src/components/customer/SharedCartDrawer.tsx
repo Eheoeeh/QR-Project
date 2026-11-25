@@ -27,7 +27,6 @@ export const SharedCartDrawer: React.FC<SharedCartDrawerProps> = ({
 
   if (!isOpen) return null;
 
-  // Calculate cart subtotal
   const cartSubtotal = cartItems.reduce((acc, item) => {
     const base = Number(item.menu_item?.base_price) || 0;
     const modDelta = (item.selected_modifiers || []).reduce(
@@ -52,27 +51,27 @@ export const SharedCartDrawer: React.FC<SharedCartDrawerProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs transition-opacity"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm transition-opacity"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl max-h-[88dvh] flex flex-col overflow-hidden shadow-2xl transition-transform"
+        className="w-full max-w-lg bg-[#0F0F12] text-white rounded-t-[28px] sm:rounded-3xl max-h-[88dvh] flex flex-col overflow-hidden shadow-2xl border border-white/10"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-orange-600/10 text-orange-600 flex items-center justify-center">
+        <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-full bg-[#FF5B22]/15 text-[#FF5B22] border border-[#FF5B22]/30 flex items-center justify-center">
               <ShoppingBag className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">Shared Table Cart</h2>
-              <p className="text-xs text-slate-400 font-medium">{tableLabel}</p>
+              <h2 className="text-base font-bold text-white">Shared Table Cart</h2>
+              <p className="text-xs text-zinc-400 font-medium">{tableLabel}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition"
+            className="w-8 h-8 rounded-full bg-[#1E1E24] hover:bg-zinc-700 flex items-center justify-center text-zinc-300 transition"
           >
             <X className="w-4 h-4" />
           </button>
@@ -82,12 +81,12 @@ export const SharedCartDrawer: React.FC<SharedCartDrawerProps> = ({
         <div className="overflow-y-auto p-4 space-y-3 flex-1">
           {cartItems.length === 0 ? (
             <div className="py-12 text-center space-y-2">
-              <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mb-3">
+              <div className="w-12 h-12 mx-auto rounded-full bg-[#18181B] border border-white/10 text-zinc-500 flex items-center justify-center mb-3">
                 <ShoppingBag className="w-6 h-6" />
               </div>
-              <h3 className="text-sm font-bold text-slate-800">Your Shared Cart is Empty</h3>
-              <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                Add dishes from the menu to build your table's order. Anyone at this table can see and add dishes.
+              <h3 className="text-sm font-bold text-white">Your Shared Cart is Empty</h3>
+              <p className="text-xs text-zinc-400 max-w-xs mx-auto leading-relaxed">
+                Add dishes from the menu to build your table&apos;s order. Everyone at this table sees updates live.
               </p>
             </div>
           ) : (
@@ -102,72 +101,68 @@ export const SharedCartDrawer: React.FC<SharedCartDrawerProps> = ({
               return (
                 <div
                   key={item.id}
-                  className="bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-2xs space-y-2.5"
+                  className="bg-[#18181B] rounded-2xl p-3.5 border border-white/[0.08] space-y-2.5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 space-y-0.5">
-                      <h4 className="font-bold text-sm text-slate-900 leading-snug">
+                      <h4 className="font-bold text-sm text-white leading-snug">
                         {item.menu_item?.name || 'Dish Item'}
                       </h4>
 
-                      {/* Chosen Modifiers */}
                       {item.selected_modifiers && item.selected_modifiers.length > 0 && (
-                        <div className="text-[11px] text-orange-600 font-medium">
+                        <div className="text-[11px] text-[#FF5B22] font-semibold">
                           + {item.selected_modifiers.map((m) => m.name).join(', ')}
                         </div>
                       )}
 
-                      {/* Custom Prep Note */}
                       {item.note && (
-                        <div className="text-[11px] text-slate-400 italic">
-                          "{item.note}"
+                        <div className="text-[11px] text-amber-300/90 italic">
+                          &ldquo;{item.note}&rdquo;
                         </div>
                       )}
                     </div>
 
-                    <span className="font-extrabold text-sm text-slate-900 shrink-0">
+                    <span className="font-extrabold text-sm text-white shrink-0 tabular-nums">
                       {currencySymbol} {lineTotal.toLocaleString()}
                     </span>
                   </div>
 
-                  {/* Quantity Stepper & Remove Action */}
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                    <span className="text-[10px] text-slate-400">
+                  {/* Quantity Stepper */}
+                  <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+                    <span className="text-[11px] text-zinc-400">
                       {currencySymbol} {(basePrice + modDelta).toLocaleString()} each
                     </span>
 
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (item.quantity > 1) {
-                              onUpdateQuantity(item.id, item.quantity - 1);
-                            } else {
-                              onRemoveItem(item.id);
-                            }
-                          }}
-                          className="w-7 h-7 rounded-lg bg-white text-slate-800 flex items-center justify-center shadow-xs transition active:scale-90"
-                        >
-                          {item.quantity === 1 ? (
-                            <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                          ) : (
-                            <Minus className="w-3.5 h-3.5" />
-                          )}
-                        </button>
+                    <div className="flex items-center gap-2 bg-[#111114] p-1 rounded-full border border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (item.quantity > 1) {
+                            onUpdateQuantity(item.id, item.quantity - 1);
+                          } else {
+                            onRemoveItem(item.id);
+                          }
+                        }}
+                        className="w-7 h-7 rounded-full bg-[#1E1E24] text-white flex items-center justify-center transition active:scale-90"
+                      >
+                        {item.quantity === 1 ? (
+                          <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                        ) : (
+                          <Minus className="w-3.5 h-3.5" />
+                        )}
+                      </button>
 
-                        <span className="w-5 text-center font-bold text-xs text-slate-900">
-                          {item.quantity}
-                        </span>
+                      <span className="w-5 text-center font-bold text-xs text-white tabular-nums">
+                        {item.quantity}
+                      </span>
 
-                        <button
-                          type="button"
-                          onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
-                          className="w-7 h-7 rounded-lg bg-white text-slate-800 flex items-center justify-center shadow-xs transition active:scale-90"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
+                        className="w-7 h-7 rounded-full bg-[#FF5B22] text-white flex items-center justify-center transition active:scale-90"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -176,12 +171,12 @@ export const SharedCartDrawer: React.FC<SharedCartDrawerProps> = ({
           )}
         </div>
 
-        {/* Pinned Sticky Bottom Action Bar with safe-area spacing */}
+        {/* Pinned Bottom Action Bar */}
         {cartItems.length > 0 && (
-          <div className="p-4 pb-6 sm:pb-4 border-t border-slate-100 bg-white shadow-xl shrink-0 space-y-3">
+          <div className="p-4 pb-6 sm:pb-4 border-t border-white/10 bg-[#121215] shrink-0 space-y-3">
             <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-500 font-medium">Cart Subtotal</span>
-              <span className="font-extrabold text-base text-slate-900">
+              <span className="text-zinc-400 font-medium">Cart Subtotal</span>
+              <span className="font-black text-base text-white tabular-nums">
                 {currencySymbol} {cartSubtotal.toLocaleString()}
               </span>
             </div>
@@ -190,7 +185,7 @@ export const SharedCartDrawer: React.FC<SharedCartDrawerProps> = ({
               type="button"
               disabled={isSubmitting || cartItems.length === 0}
               onClick={handlePlaceOrderClick}
-              className="w-full py-3.5 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white font-extrabold text-sm shadow-md transition flex items-center justify-center gap-2 active:scale-[0.99]"
+              className="w-full py-3.5 px-5 rounded-full bg-[#FF5B22] hover:bg-[#ff6d3a] disabled:opacity-40 text-white font-extrabold text-sm shadow-lg shadow-orange-950/50 transition flex items-center justify-center gap-2 active:scale-[0.99]"
             >
               {isSubmitting ? (
                 <span>Submitting to Kitchen...</span>
