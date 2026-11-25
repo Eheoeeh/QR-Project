@@ -44,6 +44,15 @@ export const WaiterPage: React.FC = () => {
     loadFloor(true);
   }, [loadFloor]);
 
+  // Debounced floor reload to prevent multiple rapid-fire re-renders
+  const reloadTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const debouncedLoadFloor = useCallback(() => {
+    if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    reloadTimerRef.current = setTimeout(() => {
+      loadFloor();
+    }, 120);
+  }, [loadFloor]);
+
   // Real-time Supabase subscriptions for dining room changes
   useEffect(() => {
     const channel = supabase
@@ -51,18 +60,18 @@ export const WaiterPage: React.FC = () => {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'table_sessions' },
-        () => loadFloor()
+        () => debouncedLoadFloor()
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tables' },
-        () => loadFloor()
+        () => debouncedLoadFloor()
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
         () => {
-          loadFloor();
+          debouncedLoadFloor();
           soundAlert.playChime(false);
         }
       )
@@ -70,7 +79,7 @@ export const WaiterPage: React.FC = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'service_requests' },
         (payload) => {
-          loadFloor();
+          debouncedLoadFloor();
           if (payload.eventType === 'INSERT') {
             soundAlert.playChime(true);
           }
@@ -79,9 +88,10 @@ export const WaiterPage: React.FC = () => {
       .subscribe();
 
     return () => {
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
       supabase.removeChannel(channel);
     };
-  }, [loadFloor]);
+  }, [debouncedLoadFloor]);
 
   // Periodic ticking timer (refreshes seated duration every 60s)
   useEffect(() => {

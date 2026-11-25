@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { TableFloorState } from '../../services/posService';
 import {
   Clock,
@@ -10,7 +10,9 @@ import {
   UserPlus,
   BellRing,
   ChevronRight,
-  Flame
+  Flame,
+  Check,
+  Loader2
 } from 'lucide-react';
 
 interface TableCardProps {
@@ -18,10 +20,10 @@ interface TableCardProps {
   currencySymbol?: string;
   requirePin?: boolean;
   onSelectTable: (tableState: TableFloorState) => void;
-  onSeatTable?: (tableId: number, tableNumber: number) => void;
-  onResolveService?: (requestId: string) => void;
-  onCollectCash?: (sessionId: string, tableId: number) => void;
-  onMarkServed?: (sessionId: string) => void;
+  onSeatTable?: (tableId: number, tableNumber: number) => Promise<void> | void;
+  onResolveService?: (requestId: string) => Promise<void> | void;
+  onCollectCash?: (sessionId: string, tableId: number) => Promise<void> | void;
+  onMarkServed?: (sessionId: string) => Promise<void> | void;
 }
 
 export const TableCard: React.FC<TableCardProps> = ({
@@ -34,10 +36,11 @@ export const TableCard: React.FC<TableCardProps> = ({
   onCollectCash,
   onMarkServed
 }) => {
+  const [isActionLoading, setIsActionLoading] = useState(false);
   const { table, session, orders, serviceRequests, runningTotal, urgency, urgencyLabel, seatedDurationMinutes } =
     tableState;
 
-  // Extract clean zone name from table label (e.g. "Indoor Window" from "Table 1 (Indoor Window)")
+  // Extract clean zone name
   const zoneName = table.label.includes('(')
     ? table.label.split('(')[1]?.replace(')', '')
     : table.label.replace(`Table ${table.table_number}`, '').trim() || 'Main Dining';
@@ -97,17 +100,27 @@ export const TableCard: React.FC<TableCardProps> = ({
     return `${hours}h ${remMins}m seated`;
   };
 
-  // Clean rounded running total
   const formattedTotal = Math.round(runningTotal).toLocaleString();
+
+  // Handle Action Click with isolation and loading lock
+  const runAction = async (e: React.MouseEvent, actionFn: () => Promise<void> | void) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isActionLoading) return;
+    setIsActionLoading(true);
+    try {
+      await actionFn();
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
 
   return (
     <div
       onClick={() => onSelectTable(tableState)}
-      className={`rounded-2xl p-4 border transition-all duration-200 cursor-pointer flex flex-col justify-between select-none ${styles.card} ${
-        isFree ? 'min-h-[175px]' : 'min-h-[200px]'
-      }`}
+      className={`rounded-2xl p-4 border transition-colors duration-150 cursor-pointer flex flex-col justify-between select-none ${styles.card} min-h-[220px]`}
     >
-      {/* Top Header: Table Title & Status Badge */}
+      {/* 1. Header: Table Title, Zone, PIN badge & Urgency Badge */}
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-2">
           {/* Table Number & Zone (Never wrap "Table 1") */}
@@ -140,120 +153,54 @@ export const TableCard: React.FC<TableCardProps> = ({
         )}
       </div>
 
-      {/* Middle Body: Dynamic state based on occupancy */}
-      <div className="py-2">
+      {/* 2. Middle Body: Clean Information Section (No floating buttons here!) */}
+      <div className="py-2.5 my-auto">
         {isFree ? (
-          <div className="py-3 flex flex-col items-center justify-center text-center space-y-2.5">
-            <p className="text-xs text-slate-500 font-medium">Table Vacant • Ready for Guests</p>
-            {onSeatTable && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSeatTable(table.id, table.table_number);
-                }}
-                className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-xs font-extrabold text-slate-200 transition shadow-xs"
-              >
-                <UserPlus className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                <span>Seat Table / PIN</span>
-              </button>
-            )}
+          <div className="text-center py-2 space-y-1">
+            <p className="text-xs text-slate-500 font-semibold">Table Vacant</p>
+            <p className="text-[11px] text-slate-600">Ready for walk-in or QR scan</p>
           </div>
         ) : (
-          <div className="space-y-2 text-xs">
-            {/* Active Service Call Notification (Water / Waiter / Cash) */}
-            {serviceRequests.length > 0 && (
-              <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 flex items-center justify-between gap-2 shadow-sm">
-                <div className="flex items-center gap-2 min-w-0">
-                  {serviceRequests[0].type === 'WATER' && (
-                    <Droplets className="w-4 h-4 text-blue-400 shrink-0" />
-                  )}
-                  {serviceRequests[0].type === 'CALL_WAITER' && (
-                    <Bell className="w-4 h-4 text-amber-400 shrink-0 animate-bounce" />
-                  )}
-                  {serviceRequests[0].type === 'PAY_CASH' && (
-                    <DollarSign className="w-4 h-4 text-purple-400 shrink-0" />
-                  )}
-                  <span className="font-extrabold text-white truncate">
-                    {serviceRequests[0].type === 'WATER' && 'Needs Water'}
-                    {serviceRequests[0].type === 'CALL_WAITER' && 'Call Waiter'}
-                    {serviceRequests[0].type === 'PAY_CASH' && 'Cash Bill Requested'}
-                    {serviceRequests[0].type === 'OTHER' && (serviceRequests[0].note || 'Special Request')}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
-                    {new Date(serviceRequests[0].created_at).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </span>
-                  {onResolveService && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onResolveService(serviceRequests[0].id);
-                      }}
-                      className="px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] transition"
-                    >
-                      Done
-                    </button>
-                  )}
-                </div>
+          <div className="space-y-2.5 text-xs">
+            {/* Unified Alert Notification Banner */}
+            {urgency === 'BILL_REQUESTED' ? (
+              <div className="p-2.5 rounded-xl bg-purple-950/80 border border-purple-500/60 text-purple-200 flex items-center gap-2 font-bold shadow-xs">
+                <DollarSign className="w-4 h-4 text-purple-400 shrink-0 animate-bounce" />
+                <span className="truncate">Cash Settlement Requested</span>
               </div>
-            )}
-
-            {/* Direct Bill Requested Action: Collect Cash & Settle */}
-            {urgency === 'BILL_REQUESTED' && session && onCollectCash && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCollectCash(session.id, table.id);
-                }}
-                className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-xs shadow-md shadow-emerald-950/40 transition flex items-center justify-center gap-1.5"
-              >
-                <DollarSign className="w-4 h-4" />
-                <span>Collect Cash & Settle Table</span>
-              </button>
-            )}
-
-            {/* Food Status Notice */}
-            {tableState.hasReadyFood ? (
-              <div className="p-2 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 flex items-center justify-between gap-2 text-xs font-extrabold">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <BellRing className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
-                  <span className="truncate">Food Ready at Pass!</span>
-                </div>
-                {onMarkServed && session && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onMarkServed(session.id);
-                    }}
-                    className="px-2 py-0.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] transition shrink-0"
-                  >
-                    Delivered
-                  </button>
+            ) : tableState.hasReadyFood ? (
+              <div className="p-2.5 rounded-xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-300 flex items-center gap-2 font-bold shadow-xs">
+                <BellRing className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
+                <span className="truncate">Food Ready at Pass!</span>
+              </div>
+            ) : serviceRequests.length > 0 ? (
+              <div className="p-2.5 rounded-xl bg-slate-950/80 border border-rose-500/50 text-rose-300 flex items-center gap-2 font-bold shadow-xs">
+                {serviceRequests[0].type === 'WATER' ? (
+                  <Droplets className="w-4 h-4 text-blue-400 shrink-0" />
+                ) : (
+                  <Bell className="w-4 h-4 text-amber-400 shrink-0 animate-bounce" />
                 )}
+                <span className="truncate">
+                  {serviceRequests[0].type === 'WATER' && 'Needs Water Refill'}
+                  {serviceRequests[0].type === 'CALL_WAITER' && 'Call Waiter to Table'}
+                  {serviceRequests[0].type === 'OTHER' && (serviceRequests[0].note || 'Special Request')}
+                </span>
               </div>
             ) : tableState.urgency === 'ORDER_PENDING' ? (
-              <div className="p-2 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 flex items-center gap-2 text-xs font-bold">
+              <div className="p-2 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 flex items-center gap-2 text-xs font-semibold">
                 <Flame className="w-4 h-4 text-amber-400 shrink-0" />
                 <span>Dishes Cooking in Kitchen</span>
               </div>
             ) : null}
 
-            {/* Seated Duration & Placed Orders Metadata */}
-            <div className="flex items-center justify-between text-slate-400 text-xs pt-0.5">
-              <span className="flex items-center gap-1.5">
+            {/* Stable Metadata Row: Seated Time & Rounds */}
+            <div className="flex items-center justify-between text-slate-400 text-xs px-0.5">
+              <span className="flex items-center gap-1.5 font-medium">
                 <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 <span>{formatDuration(seatedDurationMinutes)}</span>
               </span>
 
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 font-medium">
                 <Utensils className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 <span>
                   {orders.length === 0
@@ -262,28 +209,87 @@ export const TableCard: React.FC<TableCardProps> = ({
                 </span>
               </span>
             </div>
+
+            {/* Running Total Row */}
+            <div className="flex items-baseline justify-between px-0.5 pt-0.5 border-t border-slate-800/60">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                Running Bill
+              </span>
+              <span className="text-sm font-black text-white tracking-tight">
+                {currencySymbol} {formattedTotal}
+              </span>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Bottom Footer: ONLY shown for Occupied tables */}
-      {!isFree && (
-        <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between">
-          <div>
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">
-              Running Total
-            </span>
-            <span className="text-base font-black text-white">
-              {currencySymbol} {formattedTotal}
-            </span>
+      {/* 3. Bottom Action Footer (Clean, stable single button bar at the bottom!) */}
+      <div className="pt-2 border-t border-slate-800/80">
+        {isFree ? (
+          onSeatTable ? (
+            <button
+              type="button"
+              disabled={isActionLoading}
+              onClick={(e) => runAction(e, () => onSeatTable(table.id, table.table_number))}
+              className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-98 border border-slate-700 text-xs font-extrabold text-slate-200 transition shadow-xs flex items-center justify-center gap-1.5"
+            >
+              {isActionLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />
+              ) : (
+                <UserPlus className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              )}
+              <span>Seat Table / PIN</span>
+            </button>
+          ) : null
+        ) : urgency === 'BILL_REQUESTED' && session && onCollectCash ? (
+          <button
+            type="button"
+            disabled={isActionLoading}
+            onClick={(e) => runAction(e, () => onCollectCash(session.id, table.id))}
+            className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-black text-xs shadow-md shadow-emerald-950/40 transition flex items-center justify-center gap-1.5"
+          >
+            {isActionLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-white" />
+            ) : (
+              <DollarSign className="w-4 h-4" />
+            )}
+            <span>Collect Cash & Settle Table</span>
+          </button>
+        ) : tableState.hasReadyFood && onMarkServed && session ? (
+          <button
+            type="button"
+            disabled={isActionLoading}
+            onClick={(e) => runAction(e, () => onMarkServed(session.id))}
+            className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-black text-xs shadow-md shadow-emerald-950/40 transition flex items-center justify-center gap-1.5"
+          >
+            {isActionLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-white" />
+            ) : (
+              <Check className="w-4 h-4" />
+            )}
+            <span>Food Delivered to Table</span>
+          </button>
+        ) : serviceRequests.length > 0 && onResolveService ? (
+          <button
+            type="button"
+            disabled={isActionLoading}
+            onClick={(e) => runAction(e, () => onResolveService(serviceRequests[0].id))}
+            className="w-full py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-98 text-white font-black text-xs shadow-md shadow-blue-950/40 transition flex items-center justify-center gap-1.5"
+          >
+            {isActionLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-white" />
+            ) : (
+              <Check className="w-4 h-4" />
+            )}
+            <span>Mark Request Done</span>
+          </button>
+        ) : (
+          <div className="w-full py-1.5 px-3 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 text-slate-300 hover:text-white transition flex items-center justify-between text-xs font-bold">
+            <span>Manage Table</span>
+            <ChevronRight className="w-4 h-4 text-orange-400" />
           </div>
-
-          <div className="inline-flex items-center gap-1 text-xs font-extrabold text-orange-400 hover:text-orange-300 transition">
-            <span>Manage</span>
-            <ChevronRight className="w-4 h-4" />
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

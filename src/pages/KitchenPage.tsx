@@ -33,6 +33,15 @@ export const KitchenPage: React.FC = () => {
     }
   }, []);
 
+  // Debounce ticket refetching to prevent jitter during local status transitions
+  const fetchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const debouncedFetchTickets = useCallback(() => {
+    if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+    fetchTimeoutRef.current = setTimeout(() => {
+      fetchTickets();
+    }, 150);
+  }, [fetchTickets]);
+
   useEffect(() => {
     fetchTickets();
 
@@ -47,21 +56,21 @@ export const KitchenPage: React.FC = () => {
           const orderNum = payload.new.order_number;
           setNewOrderAlert(`New Order #${orderNum} received!`);
           setTimeout(() => setNewOrderAlert(null), 4000);
-          fetchTickets();
+          debouncedFetchTickets();
         }
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'orders' },
         () => {
-          fetchTickets();
+          debouncedFetchTickets();
         }
       )
       .on(
         'postgres_changes',
         { event: 'DELETE', schema: 'public', table: 'orders' },
         () => {
-          fetchTickets();
+          debouncedFetchTickets();
         }
       )
       .subscribe();
@@ -73,7 +82,7 @@ export const KitchenPage: React.FC = () => {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'order_items' },
         () => {
-          fetchTickets();
+          debouncedFetchTickets();
         }
       )
       .subscribe();
@@ -99,12 +108,13 @@ export const KitchenPage: React.FC = () => {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
       supabase.removeChannel(ordersChannel);
       supabase.removeChannel(itemsChannel);
       supabase.removeChannel(printJobsChannel);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [fetchTickets]);
+  }, [fetchTickets, debouncedFetchTickets]);
 
   // Status transitions
   const handleStartPreparing = async (ticketId: string) => {

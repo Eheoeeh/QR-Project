@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, CheckCircle2, Flame, Printer, Check } from 'lucide-react';
+import { Clock, CheckCircle2, Flame, Printer, Check, Loader2 } from 'lucide-react';
 import { KitchenTicket } from '../../services/kitchenService';
 
 interface OrderTicketCardProps {
   ticket: KitchenTicket;
-  onStartPreparing: (ticketId: string) => void;
-  onMarkReady: (ticketId: string) => void;
-  onMarkServed: (ticketId: string) => void;
+  onStartPreparing: (ticketId: string) => Promise<void> | void;
+  onMarkReady: (ticketId: string) => Promise<void> | void;
+  onMarkServed: (ticketId: string) => Promise<void> | void;
   onPrintKOT: (ticket: KitchenTicket) => void;
 }
 
@@ -18,11 +18,24 @@ export const OrderTicketCard: React.FC<OrderTicketCardProps> = ({
   onPrintKOT
 }) => {
   const [now, setNow] = useState(Date.now());
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const handleAction = async (e: React.MouseEvent, action: () => Promise<void> | void) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isProcessing) return;
+    setIsProcessing(true);
+    try {
+      await action();
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const elapsedSec = Math.max(0, Math.floor((now - new Date(ticket.created_at).getTime()) / 1000));
   const mins = Math.floor(elapsedSec / 60);
@@ -49,7 +62,7 @@ export const OrderTicketCard: React.FC<OrderTicketCardProps> = ({
   }
 
   return (
-    <div className={`bg-slate-800 rounded-xl border ${borderClass} overflow-hidden shadow flex flex-col justify-between transition-all duration-200`}>
+    <div className={`bg-slate-800 rounded-xl border ${borderClass} overflow-hidden shadow flex flex-col justify-between transition-colors duration-150`}>
       {/* Ticket Header */}
       <div>
         <div className="bg-slate-700/60 px-4 py-2.5 flex items-center justify-between border-b border-slate-700">
@@ -146,22 +159,32 @@ export const OrderTicketCard: React.FC<OrderTicketCardProps> = ({
         </div>
       </div>
 
-      {/* Ticket Action Footer */}
-      <div className="bg-slate-800/90 px-4 py-3 border-t border-slate-700/60">
+      {/* Ticket Action Footer with Fixed Minimum Height */}
+      <div className="bg-slate-800/90 px-4 py-3 border-t border-slate-700/60 min-h-[58px] flex items-center">
         {ticket.status === 'RECEIVED' && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full">
             <button
-              onClick={() => onStartPreparing(ticket.id)}
-              className="flex-1 py-2 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
+              disabled={isProcessing}
+              onClick={(e) => handleAction(e, () => onStartPreparing(ticket.id))}
+              className="flex-1 py-2 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
             >
-              <Flame className="w-4 h-4" />
+              {isProcessing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Flame className="w-4 h-4" />
+              )}
               <span>Start Preparing</span>
             </button>
             <button
-              onClick={() => onMarkReady(ticket.id)}
-              className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
+              disabled={isProcessing}
+              onClick={(e) => handleAction(e, () => onMarkReady(ticket.id))}
+              className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
             >
-              <CheckCircle2 className="w-4 h-4" />
+              {isProcessing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4" />
+              )}
               <span>Mark Ready</span>
             </button>
           </div>
@@ -169,25 +192,35 @@ export const OrderTicketCard: React.FC<OrderTicketCardProps> = ({
 
         {ticket.status === 'PREPARING' && (
           <button
-            onClick={() => onMarkReady(ticket.id)}
-            className="w-full py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950/40"
+            disabled={isProcessing}
+            onClick={(e) => handleAction(e, () => onMarkReady(ticket.id))}
+            className="w-full py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950/40"
           >
-            <CheckCircle2 className="w-4 h-4" />
+            {isProcessing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4" />
+            )}
             <span>Mark Ready for Pickup</span>
           </button>
         )}
 
         {ticket.status === 'READY' && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full">
             <div className="flex-1 text-[11px] text-emerald-400 font-medium flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span>Waiting for server</span>
             </div>
             <button
-              onClick={() => onMarkServed(ticket.id)}
-              className="py-1.5 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition flex items-center gap-1 border border-slate-600"
+              disabled={isProcessing}
+              onClick={(e) => handleAction(e, () => onMarkServed(ticket.id))}
+              className="py-1.5 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-slate-200 text-xs font-semibold transition flex items-center gap-1 border border-slate-600 shrink-0"
             >
-              <Check className="w-3.5 h-3.5" />
+              {isProcessing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Check className="w-3.5 h-3.5" />
+              )}
               <span>Clear Pass</span>
             </button>
           </div>
