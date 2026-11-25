@@ -1,21 +1,84 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { ExternalLink, RefreshCw, ChefHat, UserCheck, Settings, Smartphone } from 'lucide-react';
+import {
+  ExternalLink,
+  RefreshCw,
+  ChefHat,
+  UserCheck,
+  Settings,
+  Smartphone,
+  CheckCircle2,
+  AlertCircle,
+  Loader2
+} from 'lucide-react';
+import { adminService } from '../services/adminService';
+import { sessionService } from '../services/sessionService';
+import { supabase } from '../services/supabaseClient';
+import { RestaurantSettings } from '../types';
 
 export const DemoHubPage: React.FC = () => {
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const [settings, setSettings] = useState<RestaurantSettings | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetStatus, setResetStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
   const tables = [
     { number: 1, label: 'Table 1 (Indoor Window)' },
     { number: 2, label: 'Table 2 (Indoor Center)' },
     { number: 3, label: 'Table 3 (Patio Booth)' },
     { number: 4, label: 'Table 4 (Patio Garden)' },
     { number: 5, label: 'Table 5 (Terrace High)' },
-    { number: 6, label: 'Table 6 (Family Lounge)' },
+    { number: 6, label: 'Table 6 (Family Lounge)' }
   ];
 
-  const handleResetDemoData = () => {
-    if (confirm('Are you sure you want to reset all demo sessions and active orders?')) {
-      alert('Demo data reset triggered (service adapter placeholder).');
+  useEffect(() => {
+    sessionService.getRestaurantSettings().then(setSettings);
+
+    const channel = supabase
+      .channel('demohub-settings-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'restaurant_settings', filter: 'id=eq.1' },
+        (payload) => {
+          if (payload.new) {
+            setSettings(payload.new as RestaurantSettings);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const handleResetDemoData = async () => {
+    if (
+      !confirm(
+        'Reset all demo data? This will clear all test orders, active carts, service requests, print jobs, and payments, and set all 6 tables back to Free.'
+      )
+    ) {
+      return;
+    }
+
+    setIsResetting(true);
+    setResetStatus(null);
+    try {
+      await adminService.resetDemoData();
+      setResetStatus({
+        type: 'success',
+        message:
+          'Clean slate ready! All test orders, carts, service calls, print jobs, payments, and sessions were cleared — all 6 tables are now Free.'
+      });
+      setTimeout(() => setResetStatus(null), 6000);
+    } catch (err) {
+      console.error('Demo data reset failed:', err);
+      setResetStatus({
+        type: 'error',
+        message: 'Could not reset demo data. Please check your connection and try again.'
+      });
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -27,10 +90,10 @@ export const DemoHubPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                PROTOTYPE DEMO HUB
+                PROTOTYPE DEMO HUB • {settings?.name || 'Spice & Sizzle Bistro'}
               </span>
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight mt-1 text-white">
+            <h1 className="text-3xl font-extrabold tracking-tight mt-1.5 text-white">
               QR Dining & Service Management
             </h1>
             <p className="text-slate-400 text-sm mt-1">
@@ -41,13 +104,36 @@ export const DemoHubPage: React.FC = () => {
           <div className="flex items-center gap-3">
             <button
               onClick={handleResetDemoData}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium border border-slate-700 transition shadow-sm"
+              disabled={isResetting}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-600/20 hover:border-rose-500/50 hover:text-rose-200 disabled:opacity-60 text-slate-200 text-sm font-semibold border border-slate-700 transition shadow-sm"
             >
-              <RefreshCw className="w-4 h-4 text-slate-400" />
-              Reset Demo Data
+              {isResetting ? (
+                <Loader2 className="w-4 h-4 animate-spin text-orange-400" />
+              ) : (
+                <RefreshCw className="w-4 h-4 text-slate-400" />
+              )}
+              <span>{isResetting ? 'Resetting Slate...' : 'Reset Demo Data'}</span>
             </button>
           </div>
         </header>
+
+        {/* Reset Status Banner */}
+        {resetStatus && (
+          <div
+            className={`px-4 py-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 ${
+              resetStatus.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+            }`}
+          >
+            {resetStatus.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{resetStatus.message}</span>
+          </div>
+        )}
 
         {/* Staff Quick Links */}
         <section>

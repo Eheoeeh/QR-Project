@@ -225,6 +225,14 @@ export const CustomerPage: React.FC = () => {
             setMenuItems((prev) =>
               prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
             );
+            // Also keep joined menu_item inside active shared cart synced
+            setCartItems(
+              useSessionStore.getState().cartItems.map((ci) =>
+                ci.menu_item_id === updated.id
+                  ? { ...ci, menu_item: { ...(ci.menu_item || updated), ...updated } }
+                  : ci
+              )
+            );
           } else if (payload.eventType === 'INSERT' && payload.new) {
             const newItem = payload.new as MenuItem;
             setMenuItems((prev) => [...prev, newItem]);

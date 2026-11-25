@@ -2,13 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ChefHat, Printer, Volume2, VolumeX, RefreshCw, Sparkles, Filter } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { kitchenService, KitchenTicket } from '../services/kitchenService';
+import { sessionService } from '../services/sessionService';
 import { OrderTicketCard } from '../components/kitchen/OrderTicketCard';
 import { ThermalSlipDrawer, ThermalPrinterPanel } from '../components/kitchen/ThermalSlipDrawer';
 import { soundAlert } from '../utils/soundAlert';
-import { PrintJob } from '../types';
+import { PrintJob, RestaurantSettings } from '../types';
 
 export const KitchenPage: React.FC = () => {
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
+  const [settings, setSettings] = useState<RestaurantSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(soundAlert.getStatus());
   const [filter, setFilter] = useState<'ALL' | 'RECEIVED' | 'PREPARING' | 'READY'>('ALL');
@@ -17,15 +19,17 @@ export const KitchenPage: React.FC = () => {
   const [printJobs, setPrintJobs] = useState<PrintJob[]>([]);
   const [newOrderAlert, setNewOrderAlert] = useState<string | null>(null);
 
-  // Load tickets and print jobs
+  // Load tickets, print jobs, and restaurant branding settings
   const fetchTickets = useCallback(async () => {
     try {
-      const [active, jobs] = await Promise.all([
+      const [active, jobs, fetchedSettings] = await Promise.all([
         kitchenService.getActiveTickets(),
-        kitchenService.getPrintJobs()
+        kitchenService.getPrintJobs(),
+        sessionService.getRestaurantSettings()
       ]);
       setTickets(active);
       setPrintJobs(jobs);
+      setSettings(fetchedSettings);
     } catch (err) {
       console.error('Failed to load kitchen tickets:', err);
     } finally {
@@ -87,7 +91,7 @@ export const KitchenPage: React.FC = () => {
       )
       .subscribe();
 
-    // 3. Subscribe to print_jobs
+    // 3. Subscribe to print_jobs and live restaurant_settings branding
     const printJobsChannel = supabase
       .channel('kitchen-print-jobs-realtime')
       .on(
@@ -95,6 +99,15 @@ export const KitchenPage: React.FC = () => {
         { event: 'INSERT', schema: 'public', table: 'print_jobs' },
         () => {
           kitchenService.getPrintJobs().then(setPrintJobs);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'restaurant_settings', filter: 'id=eq.1' },
+        (payload) => {
+          if (payload.new) {
+            setSettings(payload.new as RestaurantSettings);
+          }
         }
       )
       .subscribe();
@@ -195,7 +208,7 @@ export const KitchenPage: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Incoming kitchen tickets & 80mm Virtual Thermal Printer
+                {settings?.name || 'Spice & Sizzle Bistro'} • Incoming kitchen tickets & 80mm Virtual Thermal Printer
               </p>
             </div>
           </div>
@@ -368,6 +381,7 @@ export const KitchenPage: React.FC = () => {
               selectedTicket={selectedTicket}
               activeTickets={tickets}
               printJobs={printJobs}
+              restaurantName={settings?.name}
             />
           </div>
         </div>
@@ -379,6 +393,7 @@ export const KitchenPage: React.FC = () => {
           selectedTicket={selectedTicket}
           activeTickets={tickets}
           printJobs={printJobs}
+          restaurantName={settings?.name}
         />
       </div>
     </div>

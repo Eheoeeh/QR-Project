@@ -68,5 +68,51 @@ export const adminService = {
 
     if (error) throw error;
     return data as RestaurantSettings;
+  },
+
+  /**
+   * Resets all transactional demo data (orders, carts, requests, print jobs,
+   * payments, sessions) and marks all tables Free between live pitches.
+   */
+  async resetDemoData(): Promise<void> {
+    const dummyUuid = '00000000-0000-0000-0000-000000000000';
+
+    // 1. Detach active session pointers from all physical tables first
+    const { error: tablesErr } = await supabase
+      .from('tables')
+      .update({ current_session_id: null })
+      .gte('table_number', 1);
+    if (tablesErr) throw tablesErr;
+
+    // 2. Clear child records referencing orders or sessions
+    const leafTables = [
+      'order_items',
+      'cart_items',
+      'service_requests',
+      'print_jobs',
+      'payments'
+    ] as const;
+
+    for (const tableName of leafTables) {
+      const { error } = await supabase.from(tableName).delete().neq('id', dummyUuid);
+      if (error) throw error;
+    }
+
+    // 3. Clear parent orders and sessions
+    const { error: ordersErr } = await supabase.from('orders').delete().neq('id', dummyUuid);
+    if (ordersErr) throw ordersErr;
+
+    const { error: sessionsErr } = await supabase
+      .from('table_sessions')
+      .delete()
+      .neq('id', dummyUuid);
+    if (sessionsErr) throw sessionsErr;
+
+    // 4. Clear any local browser table session tokens for clean re-scanning
+    if (typeof window !== 'undefined' && window.localStorage) {
+      Object.keys(window.localStorage)
+        .filter((k) => k.startsWith('qr_session_token_'))
+        .forEach((k) => window.localStorage.removeItem(k));
+    }
   }
 };
