@@ -789,7 +789,7 @@ export const CustomerPage: React.FC = () => {
 
   // 6. Active Dining Menu & Ordering Experience (Dark Onyx + Flame Orange Hero Style)
   return (
-    <div className="min-h-[100dvh] bg-[#0B0B0D] text-white pb-40">
+    <div className="min-h-[100dvh] bg-[#0B0B0D] text-white pb-40 overflow-x-hidden">
       {/* Top Curved Vibrant Orange Hero Header (Image 1 Style) */}
       <header className="bg-gradient-to-br from-[#FF5B22] to-[#FF7235] rounded-b-[28px] shadow-2xl">
         <div className="max-w-2xl mx-auto px-4 pt-4 pb-5 space-y-4">

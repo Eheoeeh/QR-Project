@@ -115,14 +115,14 @@ export const MenuCard: React.FC<MenuCardProps> = ({
   return (
     <div
       onClick={() => item.is_available && onSelect(item)}
-      className={`group relative bg-[#18181B] rounded-2xl border p-3 transition-all duration-200 flex gap-3.5 items-center justify-between shadow-md ${
+      className={`group relative w-full min-w-0 overflow-hidden bg-[#18181B] rounded-2xl border p-3 transition-all duration-200 flex gap-3.5 items-center justify-between shadow-md ${
         item.is_available
           ? 'border-white/[0.08] hover:border-[#FF5B22]/60 cursor-pointer active:scale-[0.99]'
           : 'border-white/[0.04] bg-[#141416] opacity-55 cursor-not-allowed select-none'
       }`}
     >
       {/* Left Square Photo Thumbnail */}
-      <div className="relative w-22 h-22 sm:w-24 sm:h-24 rounded-xl overflow-hidden bg-[#121214] shrink-0 border border-white/[0.06]">
+      <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden bg-[#121214] shrink-0 border border-white/[0.06]">
         {item.image_url ? (
           <img
             src={item.image_url}
