@@ -1,123 +1,357 @@
-import React, { useState } from 'react';
-import { ChefHat, Printer, Clock, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ChefHat, Printer, Volume2, VolumeX, RefreshCw, Sparkles, Filter } from 'lucide-react';
+import { supabase } from '../services/supabaseClient';
+import { kitchenService, KitchenTicket } from '../services/kitchenService';
+import { OrderTicketCard } from '../components/kitchen/OrderTicketCard';
+import { ThermalSlipDrawer } from '../components/kitchen/ThermalSlipDrawer';
+import { soundAlert } from '../utils/soundAlert';
+import { PrintJob } from '../types';
 
 export const KitchenPage: React.FC = () => {
+  const [tickets, setTickets] = useState<KitchenTicket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(soundAlert.getStatus());
+  const [filter, setFilter] = useState<'ALL' | 'RECEIVED' | 'PREPARING' | 'READY'>('ALL');
   const [showSlipDrawer, setShowSlipDrawer] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState<KitchenTicket | null>(null);
+  const [printJobs, setPrintJobs] = useState<PrintJob[]>([]);
+  const [newOrderAlert, setNewOrderAlert] = useState<string | null>(null);
+
+  // Load tickets and print jobs
+  const fetchTickets = useCallback(async () => {
+    try {
+      const [active, jobs] = await Promise.all([
+        kitchenService.getActiveTickets(),
+        kitchenService.getPrintJobs()
+      ]);
+      setTickets(active);
+      setPrintJobs(jobs);
+    } catch (err) {
+      console.error('Failed to load kitchen tickets:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTickets();
+
+    // 1. Subscribe to orders table changes
+    const ordersChannel = supabase
+      .channel('kitchen-orders-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'orders' },
+        (payload) => {
+          soundAlert.playChime(true);
+          const orderNum = payload.new.order_number;
+          setNewOrderAlert(`New Order #${orderNum} received!`);
+          setTimeout(() => setNewOrderAlert(null), 4000);
+          fetchTickets();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders' },
+        () => {
+          fetchTickets();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'orders' },
+        () => {
+          fetchTickets();
+        }
+      )
+      .subscribe();
+
+    // 2. Subscribe to order_items insertions
+    const itemsChannel = supabase
+      .channel('kitchen-items-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'order_items' },
+        () => {
+          fetchTickets();
+        }
+      )
+      .subscribe();
+
+    // 3. Subscribe to print_jobs
+    const printJobsChannel = supabase
+      .channel('kitchen-print-jobs-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'print_jobs' },
+        () => {
+          kitchenService.getPrintJobs().then(setPrintJobs);
+        }
+      )
+      .subscribe();
+
+    // Visibility wake up listener
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchTickets();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      supabase.removeChannel(ordersChannel);
+      supabase.removeChannel(itemsChannel);
+      supabase.removeChannel(printJobsChannel);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchTickets]);
+
+  // Status transitions
+  const handleStartPreparing = async (ticketId: string) => {
+    // Optimistic local update
+    setTickets((prev) =>
+      prev.map((t) => (t.id === ticketId ? { ...t, status: 'PREPARING' } : t))
+    );
+    await kitchenService.updateTicketStatus(ticketId, 'PREPARING');
+  };
+
+  const handleMarkReady = async (ticketId: string) => {
+    // Optimistic local update
+    setTickets((prev) =>
+      prev.map((t) => (t.id === ticketId ? { ...t, status: 'READY' } : t))
+    );
+    await kitchenService.updateTicketStatus(ticketId, 'READY');
+  };
+
+  const handleMarkServed = async (ticketId: string) => {
+    // Optimistic local update: remove from active pass
+    setTickets((prev) => prev.filter((t) => t.id !== ticketId));
+    await kitchenService.updateTicketStatus(ticketId, 'SERVED');
+  };
+
+  const handlePrintKOT = (ticket: KitchenTicket) => {
+    setSelectedTicket(ticket);
+    setShowSlipDrawer(true);
+  };
+
+  const toggleSound = () => {
+    if (soundEnabled) {
+      soundAlert.disable();
+      setSoundEnabled(false);
+    } else {
+      const ok = soundAlert.enable();
+      setSoundEnabled(ok);
+    }
+  };
+
+  // Filtered tickets
+  const filteredTickets = tickets.filter((t) => {
+    if (filter === 'ALL') return true;
+    return t.status === filter;
+  });
+
+  const countReceived = tickets.filter((t) => t.status === 'RECEIVED').length;
+  const countPreparing = tickets.filter((t) => t.status === 'PREPARING').length;
+  const countReady = tickets.filter((t) => t.status === 'READY').length;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-6">
+    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-6 select-none">
       <div className="max-w-7xl mx-auto space-y-6">
+        {/* Floating New Order Banner */}
+        {newOrderAlert && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-orange-600 text-white font-bold px-4 py-2 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce border border-orange-400">
+            <Sparkles className="w-4 h-4" />
+            <span>{newOrderAlert}</span>
+          </div>
+        )}
+
         {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
               <ChefHat className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">Kitchen Display System (KDS)</h1>
-              <p className="text-xs text-slate-400">Incoming tickets & 80mm Virtual Thermal Printer</p>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold text-white tracking-wide">
+                  Kitchen Display System (KDS)
+                </h1>
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Live Sync
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Incoming tickets & 80mm Virtual Thermal Printer
+              </p>
             </div>
           </div>
 
-          <button
-            onClick={() => setShowSlipDrawer(!showSlipDrawer)}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
-          >
-            <Printer className="w-4 h-4 text-orange-400" />
-            <span>{showSlipDrawer ? 'Hide Virtual Printer' : '80mm Thermal Printer'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Sound Toggle */}
+            <button
+              onClick={toggleSound}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition ${
+                soundEnabled
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+              }`}
+              title="Toggle audio alerts for incoming orders"
+            >
+              {soundEnabled ? (
+                <>
+                  <Volume2 className="w-4 h-4 text-amber-400" />
+                  <span>Sound On</span>
+                </>
+              ) : (
+                <>
+                  <VolumeX className="w-4 h-4 text-slate-400" />
+                  <span>Sound Off</span>
+                </>
+              )}
+            </button>
+
+            {/* Refresh */}
+            <button
+              onClick={fetchTickets}
+              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+              title="Refresh tickets"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+
+            {/* 80mm Virtual Thermal Printer Button */}
+            <button
+              onClick={() => {
+                setSelectedTicket(null);
+                setShowSlipDrawer(!showSlipDrawer);
+              }}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+            >
+              <Printer className="w-4 h-4 text-orange-400" />
+              <span>{showSlipDrawer ? 'Hide Virtual Printer' : '80mm Thermal Printer'}</span>
+            </button>
+          </div>
         </header>
 
-        {/* Tickets Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Sample Demo Ticket */}
-          <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow">
-            <div className="bg-slate-700/60 px-4 py-2.5 flex items-center justify-between border-b border-slate-700">
-              <span className="font-bold text-sm text-amber-400">#101 • Table 2</span>
-              <div className="flex items-center gap-1 text-xs text-slate-400">
-                <Clock className="w-3.5 h-3.5" />
-                <span>02:15 ago</span>
-              </div>
-            </div>
+        {/* Filter Navigation Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 bg-slate-800/80 p-1 rounded-xl border border-slate-700/80 text-xs">
+            <button
+              onClick={() => setFilter('ALL')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
+                filter === 'ALL'
+                  ? 'bg-orange-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>All Active</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-900/60 text-slate-200">
+                {tickets.length}
+              </span>
+            </button>
 
-            <div className="p-4 space-y-3">
-              <div className="flex justify-between items-start text-sm">
-                <div>
-                  <span className="font-semibold text-white">2x Prime Smash Cheeseburger</span>
-                  <div className="text-xs text-orange-300 ml-2 font-mono">+ Double Cheese</div>
-                  <div className="text-xs text-slate-400 ml-2 italic">"extra crispy fries please"</div>
-                </div>
-              </div>
-              <div className="flex justify-between items-start text-sm">
-                <div>
-                  <span className="font-semibold text-white">1x Loaded Truffle Fries</span>
-                </div>
-              </div>
-            </div>
+            <button
+              onClick={() => setFilter('RECEIVED')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
+                filter === 'RECEIVED'
+                  ? 'bg-orange-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>New</span>
+              {countReceived > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-orange-500 text-white animate-pulse">
+                  {countReceived}
+                </span>
+              )}
+            </button>
 
-            <div className="bg-slate-800/80 px-4 py-3 border-t border-slate-700/60 flex items-center gap-2">
-              <button className="flex-1 py-2 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold transition">
-                Start Preparing
-              </button>
-              <button className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition flex items-center justify-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Mark Ready
-              </button>
-            </div>
+            <button
+              onClick={() => setFilter('PREPARING')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
+                filter === 'PREPARING'
+                  ? 'bg-orange-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>Cooking</span>
+              {countPreparing > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-500 text-white">
+                  {countPreparing}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setFilter('READY')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
+                filter === 'READY'
+                  ? 'bg-orange-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>Ready</span>
+              {countReady > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500 text-white">
+                  {countReady}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <Filter className="w-3.5 h-3.5" />
+            <span>Showing {filteredTickets.length} tickets</span>
           </div>
         </div>
 
-        {/* 80mm Virtual Monospace Slip Drawer Preview */}
-        {showSlipDrawer && (
-          <aside className="fixed right-0 top-0 bottom-0 w-88 bg-slate-950 border-l border-slate-800 p-4 overflow-y-auto shadow-2xl z-50">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Printer className="w-4 h-4 text-orange-400" />
-                80mm Virtual Thermal Slip
-              </h3>
-              <button
-                onClick={() => setShowSlipDrawer(false)}
-                className="text-xs text-slate-400 hover:text-white"
-              >
-                Close
-              </button>
+        {/* Tickets Grid */}
+        {loading ? (
+          <div className="py-20 text-center text-slate-400">
+            <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-3 text-orange-500" />
+            <p className="text-sm font-semibold">Connecting to kitchen pass stream...</p>
+          </div>
+        ) : filteredTickets.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredTickets.map((ticket) => (
+              <OrderTicketCard
+                key={ticket.id}
+                ticket={ticket}
+                onStartPreparing={handleStartPreparing}
+                onMarkReady={handleMarkReady}
+                onMarkServed={handleMarkServed}
+                onPrintKOT={handlePrintKOT}
+              />
+            ))}
+          </div>
+        ) : (
+          /* Empty State */
+          <div className="bg-slate-800/40 rounded-2xl border border-slate-800 p-12 text-center max-w-lg mx-auto">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
+              <ChefHat className="w-8 h-8" />
             </div>
-
-            <div className="bg-white text-black p-4 rounded shadow-inner font-mono text-xs leading-tight thermal-receipt printable-thermal">
-              <div className="text-center font-bold text-sm">SPICE & SIZZLE BISTRO</div>
-              <div className="text-center text-[11px] mb-2">--- KITCHEN ORDER TICKET (KOT) ---</div>
-              <div className="flex justify-between text-[11px]">
-                <span>TICKET: #101</span>
-                <span>TABLE: 2</span>
-              </div>
-              <div className="text-[10px] text-gray-500 border-b border-dashed border-gray-400 pb-1 mb-2">
-                2026-11-24 20:15
-              </div>
-              <div className="space-y-1.5 text-xs">
-                <div>
-                  <div className="font-bold">2x Prime Smash Cheeseburger</div>
-                  <div className="text-[10px] pl-3">+ Double Cheese</div>
-                  <div className="text-[10px] pl-3 italic">** extra crispy fries please **</div>
-                </div>
-                <div>
-                  <div className="font-bold">1x Loaded Truffle Fries</div>
-                </div>
-              </div>
-              <div className="border-t border-dashed border-gray-400 my-2 pt-1 text-center text-[10px]">
-                --- END OF TICKET ---
-              </div>
+            <h3 className="text-base font-bold text-white mb-1">
+              Pass is Clear — All Orders Served!
+            </h3>
+            <p className="text-xs text-slate-400 leading-relaxed mb-4">
+              There are currently no active tickets in the kitchen. When customers or waiters place an order from any table, it will appear here instantly with live cook timers and an audio chime.
+            </p>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs border border-slate-700">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Kitchen channel listening in real time</span>
             </div>
-
-            <div className="mt-4">
-              <button
-                onClick={() => window.print()}
-                className="w-full py-2 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold transition"
-              >
-                Print Slip (window.print)
-              </button>
-            </div>
-          </aside>
+          </div>
         )}
+
+        {/* 80mm Virtual Monospace Thermal Slip Drawer */}
+        <ThermalSlipDrawer
+          isOpen={showSlipDrawer}
+          onClose={() => setShowSlipDrawer(false)}
+          selectedTicket={selectedTicket}
+          activeTickets={tickets}
+          printJobs={printJobs}
+        />
       </div>
     </div>
   );
