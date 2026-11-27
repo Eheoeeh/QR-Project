@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   ExternalLink,
@@ -9,7 +9,10 @@ import {
   Smartphone,
   CheckCircle2,
   AlertCircle,
-  Loader2
+  Loader2,
+  Search,
+  QrCode,
+  ArrowRight
 } from 'lucide-react';
 import { adminService } from '../services/adminService';
 import { sessionService } from '../services/sessionService';
@@ -21,14 +24,16 @@ export const DemoHubPage: React.FC = () => {
   const [settings, setSettings] = useState<RestaurantSettings | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const [resetStatus, setResetStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [zoneFilter, setZoneFilter] = useState<'ALL' | 'INDOOR' | 'PATIO' | 'LOUNGE'>('ALL');
 
   const tables = [
-    { number: 1, label: 'Table 1 (Indoor Window)' },
-    { number: 2, label: 'Table 2 (Indoor Center)' },
-    { number: 3, label: 'Table 3 (Patio Booth)' },
-    { number: 4, label: 'Table 4 (Patio Garden)' },
-    { number: 5, label: 'Table 5 (Terrace High)' },
-    { number: 6, label: 'Table 6 (Family Lounge)' }
+    { number: 1, label: 'Table 1 (Indoor Window)', zone: 'Indoor Window', group: 'INDOOR' as const },
+    { number: 2, label: 'Table 2 (Indoor Center)', zone: 'Indoor Center', group: 'INDOOR' as const },
+    { number: 3, label: 'Table 3 (Patio Booth)', zone: 'Patio Booth', group: 'PATIO' as const },
+    { number: 4, label: 'Table 4 (Patio Garden)', zone: 'Patio Garden', group: 'PATIO' as const },
+    { number: 5, label: 'Table 5 (Terrace High)', zone: 'Terrace High', group: 'LOUNGE' as const },
+    { number: 6, label: 'Table 6 (Family Lounge)', zone: 'Family Lounge', group: 'LOUNGE' as const }
   ];
 
   useEffect(() => {
@@ -82,35 +87,48 @@ export const DemoHubPage: React.FC = () => {
     }
   };
 
+  const filteredTables = useMemo(() => {
+    return tables.filter((t) => {
+      const matchesZone = zoneFilter === 'ALL' || t.group === zoneFilter;
+      const q = searchQuery.trim().toLowerCase();
+      const matchesSearch =
+        !q ||
+        t.label.toLowerCase().includes(q) ||
+        `table ${t.number}`.includes(q);
+      return matchesZone && matchesSearch;
+    });
+  }, [zoneFilter, searchQuery]);
+
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-6 md:p-10">
-      <div className="max-w-6xl mx-auto space-y-8">
-        {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
+    <div className="min-h-screen bg-[#111214] text-zinc-100 p-4 sm:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto space-y-7">
+        {/* Top Header */}
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/[0.07] pb-6">
           <div>
             <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                PROTOTYPE DEMO HUB • {settings?.name || 'Spice & Sizzle Bistro'}
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/25">
+                <QrCode className="w-3.5 h-3.5" />
+                <span>QR PORTAL HUB • {settings?.name || 'Spice & Sizzle Bistro'}</span>
               </span>
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight mt-1.5 text-white">
-              QR Dining & Service Management
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mt-2 text-white">
+              Dining &amp; Service Command Center
             </h1>
-            <p className="text-slate-400 text-sm mt-1">
-              Live scannable multi-device pitch hub. Open staff panels in separate tabs, then scan table QR codes with your phone.
+            <p className="text-zinc-400 text-xs sm:text-sm mt-1">
+              Open staff dashboards in separate tabs, or scan any table QR card below with your phone.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <button
               onClick={handleResetDemoData}
               disabled={isResetting}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-600/20 hover:border-rose-500/50 hover:text-rose-200 disabled:opacity-60 text-slate-200 text-sm font-semibold border border-slate-700 transition shadow-sm"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-zinc-950 text-xs sm:text-sm font-extrabold transition shadow-lg shadow-amber-500/20 active:scale-95"
             >
               {isResetting ? (
-                <Loader2 className="w-4 h-4 animate-spin text-orange-400" />
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <RefreshCw className="w-4 h-4 text-slate-400" />
+                <RefreshCw className="w-4 h-4" />
               )}
               <span>{isResetting ? 'Resetting Slate...' : 'Reset Demo Data'}</span>
             </button>
@@ -120,7 +138,7 @@ export const DemoHubPage: React.FC = () => {
         {/* Reset Status Banner */}
         {resetStatus && (
           <div
-            className={`px-4 py-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 ${
+            className={`px-4 py-3 rounded-2xl border text-xs font-semibold flex items-center gap-2.5 ${
               resetStatus.type === 'success'
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
                 : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
@@ -135,128 +153,189 @@ export const DemoHubPage: React.FC = () => {
           </div>
         )}
 
-        {/* Staff Quick Links */}
+        {/* Top 3 Staff Portal Tinted Glass Cards (Reference Image Style) */}
         <section>
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-            Staff & Management Dashboards
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Rose Tinted Card: Waiter & POS */}
             <a
               href="/waiter"
               target="_blank"
               rel="noopener noreferrer"
-              className="group p-5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-orange-500/50 transition flex items-start justify-between"
+              className="group rounded-[22px] p-5 bg-gradient-to-br from-rose-950/45 via-[#1B181B] to-[#18191C] border border-rose-500/20 hover:border-rose-400/45 transition-all flex flex-col justify-between gap-4 shadow-xl"
             >
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              <div className="space-y-3">
+                <div className="w-10 h-10 rounded-full bg-rose-500/15 border border-rose-500/25 text-rose-400 flex items-center justify-center">
                   <UserCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-white group-hover:text-orange-400 transition">
-                    Waiter & POS Dashboard
+                  <h3 className="text-base font-extrabold text-rose-400">
+                    Waiter &amp; Cashier POS
                   </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Live table grid, service alerts, wait timers, cashier bill settlement.
+                  <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                    Live floor overview, urgency alerts, service timers &amp; cash bill settlement.
                   </p>
                 </div>
+                <div className="text-xl font-black text-white tracking-tight">
+                  6 Tables Live
+                </div>
               </div>
-              <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
+
+              <div className="w-full py-2.5 px-4 rounded-full bg-rose-500/15 group-hover:bg-rose-500/25 border border-rose-500/25 text-rose-300 text-xs font-bold flex items-center justify-center gap-1.5 transition">
+                <span>Open Waiter Portal</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
             </a>
 
+            {/* Emerald Tinted Card: Kitchen Display */}
             <a
               href="/kitchen"
               target="_blank"
               rel="noopener noreferrer"
-              className="group p-5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-orange-500/50 transition flex items-start justify-between"
+              className="group rounded-[22px] p-5 bg-gradient-to-br from-emerald-950/45 via-[#171C1B] to-[#18191C] border border-emerald-500/20 hover:border-emerald-400/45 transition-all flex flex-col justify-between gap-4 shadow-xl"
             >
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <div className="space-y-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 flex items-center justify-center">
                   <ChefHat className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-white group-hover:text-orange-400 transition">
-                    Kitchen Display & Printer
+                  <h3 className="text-base font-extrabold text-emerald-400">
+                    Kitchen Display (KDS)
                   </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    KDS queue tickets + 80mm Virtual Monospace Thermal Receipt simulator.
+                  <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                    Incoming kitchen pass tickets + 80mm Virtual Thermal KOT Printer.
                   </p>
                 </div>
+                <div className="text-xl font-black text-white tracking-tight">
+                  Live Pass Stream
+                </div>
               </div>
-              <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
+
+              <div className="w-full py-2.5 px-4 rounded-full bg-emerald-500/15 group-hover:bg-emerald-500/25 border border-emerald-500/25 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition">
+                <span>Open Kitchen Portal</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
             </a>
 
+            {/* Indigo Tinted Card: Mini Admin */}
             <a
               href="/admin"
               target="_blank"
               rel="noopener noreferrer"
-              className="group p-5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-orange-500/50 transition flex items-start justify-between"
+              className="group rounded-[22px] p-5 bg-gradient-to-br from-indigo-950/45 via-[#181921] to-[#18191C] border border-indigo-500/20 hover:border-indigo-400/45 transition-all flex flex-col justify-between gap-4 shadow-xl"
             >
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <div className="space-y-3">
+                <div className="w-10 h-10 rounded-full bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 flex items-center justify-center">
                   <Settings className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-white group-hover:text-orange-400 transition">
-                    Mini Admin Panel
+                  <h3 className="text-base font-extrabold text-indigo-400">
+                    Mini Admin Controls
                   </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Live sold-out toggles, tax & PIN settings, printable QR code sheets.
+                  <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                    Sold-out switches, inline pricing, tax/PIN settings &amp; printable QR sheets.
                   </p>
                 </div>
+                <div className="text-xl font-black text-white tracking-tight">
+                  Live Menu &amp; Tax
+                </div>
               </div>
-              <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
+
+              <div className="w-full py-2.5 px-4 rounded-full bg-indigo-500/15 group-hover:bg-indigo-500/25 border border-indigo-500/25 text-indigo-300 text-xs font-bold flex items-center justify-center gap-1.5 transition">
+                <span>Open Admin Portal</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
             </a>
           </div>
         </section>
 
-        {/* Demo Tables Grid */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
+        {/* Tables QR Section Header + Pill Filters & Search (Reference Image Style) */}
+        <section className="space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Customer Mobile Scanning Hub (Tables 1 - 6)
+              <h2 className="text-lg font-extrabold text-white tracking-tight">
+                Customer Table QR Portal (Tables 1 – 6)
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Scan with any mobile camera, or click "Open Link" to simulate a phone session in your browser.
+              <p className="text-xs text-zinc-400 mt-0.5 flex items-center gap-1.5">
+                <Smartphone className="w-3.5 h-3.5 text-amber-400" />
+                <span>Scan with your phone camera, or click Open Table to test in a new tab</span>
               </p>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-400">
-              <Smartphone className="w-4 h-4 text-orange-400" />
-              <span>Multi-device synced cart & bill</span>
+
+            {/* Pill Search */}
+            <div className="relative w-full md:w-64">
+              <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search table or zone..."
+                className="w-full pl-9 pr-4 py-2 rounded-full bg-[#18191C] border border-white/[0.1] text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-amber-500/60 transition"
+              />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {tables.map((t) => {
+          {/* Zone Filter Pills */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+            {(
+              [
+                { id: 'ALL', label: 'All Zones' },
+                { id: 'INDOOR', label: 'Indoor' },
+                { id: 'PATIO', label: 'Patio' },
+                { id: 'LOUNGE', label: 'Terrace & Lounge' }
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setZoneFilter(tab.id)}
+                className={`px-4 py-1.5 rounded-full text-xs font-extrabold transition shrink-0 ${
+                  zoneFilter === tab.id
+                    ? 'bg-amber-500 text-zinc-950 shadow-md shadow-amber-500/20'
+                    : 'bg-[#18191C] text-zinc-300 border border-white/[0.1] hover:border-white/25'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* QR Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredTables.map((t) => {
               const url = `${origin}/t/${t.number}`;
               return (
                 <div
                   key={t.number}
-                  className="bg-slate-800/90 rounded-2xl p-5 border border-slate-700/80 flex flex-col items-center text-center shadow-lg hover:border-slate-600 transition"
+                  className="bg-[#18191C] rounded-[22px] p-5 border border-white/[0.08] hover:border-amber-500/40 flex flex-col items-center text-center shadow-xl transition"
                 >
-                  <div className="bg-white p-3 rounded-xl shadow-inner mb-4">
+                  <div className="w-full flex items-center justify-between mb-4">
+                    <span className="px-2.5 py-1 rounded-full bg-[#111214] border border-white/[0.08] text-[11px] font-bold text-zinc-300">
+                      {t.zone}
+                    </span>
+                    <span className="text-[11px] font-mono text-zinc-500">/t/{t.number}</span>
+                  </div>
+
+                  <div className="bg-white p-3.5 rounded-2xl shadow-inner mb-4">
                     <QRCodeSVG
                       value={url}
-                      size={140}
+                      size={144}
                       level="M"
                       includeMargin={false}
                     />
                   </div>
 
-                  <h3 className="text-lg font-bold text-white">{t.label}</h3>
-                  <p className="text-xs font-mono text-slate-400 mt-1 select-all break-all">
-                    /t/{t.number}
-                  </p>
+                  <h3 className="text-lg font-black text-white">Table {t.number}</h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">{t.zone}</p>
 
                   <div className="mt-4 w-full">
                     <a
                       href={`/t/${t.number}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold shadow transition"
+                      className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-extrabold shadow-lg shadow-amber-500/15 transition active:scale-95"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      Open Table {t.number}
+                      <span>Open Table {t.number}</span>
                     </a>
                   </div>
                 </div>
